@@ -4,14 +4,21 @@ import { executeSearch } from '../lib/search-engine.js';
 let allPosts = [];
 const imageObjectUrls = new Set();
 
+// Sorting State
+let currentSortField = 'timestamp'; // 'timestamp' | 'tableOrder'
+let isDescOrder = true;             // true = Newest First / Highest Index, false = Oldest First / Lowest Index
+
 async function initDashboard() {
   console.log("[FB Dashboard] Initializing...");
 
   try {
-    allPosts = await getAllPosts();
+    const rawPosts = await getAllPosts();
+    // Index posts by their original table position
+    allPosts = rawPosts.map((post, index) => ({ ...post, _originalIndex: index }));
+
     renderStats();
     populateGroupDropdown();
-    await renderFeed(allPosts);
+    await filterAndRender();
   } catch (err) {
     console.error("[FB Dashboard] Error loading posts from DB:", err?.message || err);
   }
@@ -20,6 +27,21 @@ async function initDashboard() {
   document.getElementById('search-input')?.addEventListener('input', filterAndRender);
   document.getElementById('cb-hide-text-duplicates')?.addEventListener('change', filterAndRender);
   document.getElementById('btn-purge')?.addEventListener('click', handlePurge);
+
+  // Sort Event Listeners
+  document.getElementById('sort-select')?.addEventListener('change', (e) => {
+    currentSortField = e.target.value;
+    filterAndRender();
+  });
+
+  document.getElementById('btn-sort-dir')?.addEventListener('click', () => {
+    isDescOrder = !isDescOrder;
+    const iconEl = document.getElementById('sort-dir-icon');
+    const textEl = document.getElementById('sort-dir-text');
+    if (iconEl) iconEl.textContent = isDescOrder ? '⬇️' : '⬆️';
+    if (textEl) textEl.textContent = isDescOrder ? 'Newest First' : 'Oldest First';
+    filterAndRender();
+  });
 
   // Dropdown toggle & Click-Outside logic
   const dropdownBtn = document.getElementById('dropdown-btn');
@@ -47,14 +69,14 @@ async function initDashboard() {
     filterAndRender();
   });
 
-  // Listen for Live Updates from the Service Worker
+  // Listen for Live Updates from Service Worker
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "NEW_POST_SAVED" && message.payload) {
       handleLivePostUpdate(message.payload);
     }
   });
 
-  // --- Search Cheatsheet Controls ---
+  // Cheatsheet Controls
   const drawer = document.getElementById('cheat-sheet-drawer');
   const backdrop = document.getElementById('drawer-backdrop');
   const btnCheatSheet = document.getElementById('btn-cheat-sheet');
@@ -74,9 +96,12 @@ async function handleLivePostUpdate(newPost) {
   const existingIndex = allPosts.findIndex(p => p.postId === newPost.postId);
 
   if (existingIndex > -1) {
-    allPosts[existingIndex] = newPost;
+    // Retain existing _originalIndex when updating
+    allPosts[existingIndex] = { ...newPost, _originalIndex: allPosts[existingIndex]._originalIndex };
   } else {
-    allPosts.unshift(newPost);
+    // Assign new highest index
+    const nextIndex = allPosts.length > 0 ? Math.max(...allPosts.map(p => p._originalIndex ?? 0)) + 1 : 0;
+    allPosts.push({ ...newPost, _originalIndex: nextIndex });
   }
 
   renderStats();
@@ -176,20 +201,35 @@ function filterAndRender() {
     return post.group?.name ? selectedGroups.has(post.group.name) : false;
   });
 
-  // 2. Apply Search Engine
+  // 2. Search Engine Filter
   filteredPosts = executeSearch(query, filteredPosts);
 
-  // 3. Exact Text Deduplication (if checked)
+  // 3. Exact Text Deduplication Filter
   if (hideDuplicates) {
     const seenTexts = new Set();
     filteredPosts = filteredPosts.filter(post => {
       const normText = (post.text || '').trim().toLowerCase();
-      if (!normText) return true; // Keep posts with no text (e.g., photo-only)
+      if (!normText) return true;
       if (seenTexts.has(normText)) return false;
       seenTexts.add(normText);
       return true;
     });
   }
+
+  // 4. Sort Filtered Posts
+  filteredPosts.sort((a, b) => {
+    let valA, valB;
+
+    if (currentSortField === 'timestamp') {
+      valA = a.timestamp ? a.timestamp * 1000 : 0;
+      valB = b.timestamp ? b.timestamp * 1000 : 0;
+    } else { // 'tableOrder'
+      valA = a._originalIndex ?? 0;
+      valB = b._originalIndex ?? 0;
+    }
+
+    return isDescOrder ? valB - valA : valA - valB;
+  });
 
   renderFeed(filteredPosts);
 }
@@ -244,7 +284,6 @@ async function renderFeed(posts) {
   const container = document.getElementById('feed-container');
   const showingStat = document.getElementById('stat-showing-count');
 
-  // Update the showing count stat dynamically
   if (showingStat) showingStat.textContent = posts ? posts.length : 0;
 
   if (!container) return;

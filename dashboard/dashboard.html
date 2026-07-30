@@ -46,10 +46,21 @@
         </div>
       </div>
 
-      <!-- Bottom Controls Row: Counter (Left) & Deduplication (Right) -->
+      <!-- Bottom Controls Row: Counter (Left), Sorting (Middle), Deduplication (Right) -->
         <div class="filter-row bottom-row">
             <div class="showing-counter">
             Showing <strong id="stat-showing-count">0</strong> of <strong id="stat-post-count">0</strong> captured posts
+            </div>
+
+            <div class="sort-controls">
+            <label for="sort-select">Sort by:</label>
+            <select id="sort-select" class="sort-dropdown">
+                <option value="timestamp">General Post Time</option>
+                <option value="tableOrder">Capture Time</option>
+            </select>
+            <button id="btn-sort-dir" class="btn-secondary btn-sort" title="Toggle Sort Direction">
+                <span id="sort-dir-icon">⬇️</span> <span id="sort-dir-text">Newest First</span>
+            </button>
             </div>
 
             <label class="checkbox-label">
