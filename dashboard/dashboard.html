@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FB Feed Filter Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <h1>FB Feed Dashboard</h1>
+      <div class="stats-bar">
+        <span>Posts Captured: <strong id="stat-post-count">0</strong></span>
+        <span>Media Blobs Cached: <strong id="stat-media-count">0</strong></span>
+      </div>
+      <div class="actions">
+        <button id="btn-purge" class="btn-danger">Clear All Data</button>
+      </div>
+    </header>
+
+    <div class="filter-controls">
+      <input type="text" id="search-input" placeholder="Search posts by author or text..." />
+      <select id="group-filter">
+        <option value="ALL">All Sources</option>
+      </select>
+    </div>
+
+    <main class="feed-grid" id="feed-container">
+      <div class="empty-state">No posts captured yet. Scroll Facebook to start collecting!</div>
+    </main>
+  </div>
+
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>

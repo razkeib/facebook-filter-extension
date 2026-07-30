@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "FB Feed Stealth Filter",
+  "version": "1.0",
+  "description": "Passively filters Facebook feed data and caches filtered posts locally.",
+  "permissions": [
+    "debugger",
+    "storage",
+    "unlimitedStorage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://*.facebook.com/*"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Open FB Filter Dashboard"
+  },
+  "content_scripts": [
+      {
+        "matches": ["https://*.facebook.com/*"],
+        "js": ["content/content.js"],
+        "run_at": "document_idle"
+      }
+  ]
+}
