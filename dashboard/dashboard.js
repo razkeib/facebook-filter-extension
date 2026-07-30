@@ -274,7 +274,7 @@ function createPostCard(post) {
         </div>
       </div>
     </div>
-    <div class="post-content">${escapeHtml(post.text || '')}</div>
+    <div class="post-content" dir="auto">${escapeHtml(post.text || '')}</div>
     ${imagesContainerHtml}
   `;
   return card;
