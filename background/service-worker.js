@@ -3,13 +3,10 @@ import { savePost, saveMediaBlob, clearAllData } from '../lib/db.js';
 
 let attachedTabId = null;
 
-// Sets & Maps for safe image alignment
-const allowedImageUrls = new Set();
-const pendingImages = new Map(); // Key: URL, Value: { base64Data, mimeType, timestamp }
-
 const INITIAL_FILTER_CONFIG = {
   excludedKeywords: [],
-  excludedGroupIds: []
+  excludedGroupIds: [],
+  requiredKeywords: []
 };
 
 function passesInitialFilter(post) {
@@ -21,7 +18,7 @@ function passesInitialFilter(post) {
   }
 
   // 2. Filter by keywords if configured
-  if (INITIAL_FILTER_CONFIG.requiredKeywords?.length > 0) {
+  if (INITIAL_FILTER_CONFIG.requiredKeywords && INITIAL_FILTER_CONFIG.requiredKeywords.length > 0) {
     const text = (post.text || "").toLowerCase();
     const hasKeyword = INITIAL_FILTER_CONFIG.requiredKeywords.some(kw =>
       text.includes(kw.toLowerCase())
@@ -73,26 +70,20 @@ chrome.debugger.onEvent.addListener((debuggee, method, params) => {
           if (chrome.runtime.lastError || !result || !result.body) return;
 
           try {
-            // A. Handle GraphQL Responses
             if (isGraphQL) {
               const parsedPosts = parseGraphQLPayload(result.body);
 
               for (const post of parsedPosts) {
                 if (passesInitialFilter(post)) {
                   await savePost(post);
-                  console.log("[FB Filter] Saved Post:", post.postId, "by", post.author.name);
+                  console.log("[FB Filter] Saved/Updated Post:", post.postId, "by", post.author.name);
                 }
               }
-            }
-
-            // B. Handle CDN Images (Bypass all queue/allowed logic & save directly!)
-            else if (isImage) {
+            } else if (isImage) {
               const base64Data = result.base64Encoded ? result.body : btoa(result.body);
               const mimeType = response.mimeType || 'image/jpeg';
 
-              // Unconditionally write directly to IndexedDB
               await saveMediaBlob(url, base64Data, mimeType);
-              console.debug("[FB Image Filter - Debug] Direct saved image blob:", url.substring(0, 60));
             }
           } catch (e) {
             // Ignore stream processing errors
@@ -111,7 +102,7 @@ chrome.runtime.onStartup.addListener(async () => {
   }
 });
 
-// Message listener to receive initial script payloads and pass them through parseGraphQLPayload
+// Message listener to receive initial SSR script payloads
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "PROCESS_SSR_SCRIPTS" && Array.isArray(message.payloads)) {
     (async () => {
@@ -121,7 +112,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (passesInitialFilter(post)) {
             await savePost(post);
             console.log("[FB Filter] Saved SSR initial post:", post.postId, "by", post.author.name);
-            (post.images || []).forEach(imgUrl => allowedImageUrls.add(imgUrl));
           }
         }
       }
