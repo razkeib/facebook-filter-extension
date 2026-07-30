@@ -57,8 +57,6 @@ async function renderFeed(posts) {
   if (!container) return;
 
   container.innerHTML = '';
-
-  // Free allocated Object URLs
   imageObjectUrls.forEach(url => URL.revokeObjectURL(url));
   imageObjectUrls.clear();
 
@@ -71,11 +69,27 @@ async function renderFeed(posts) {
     const card = document.createElement('article');
     card.className = 'post-card';
 
-    const authorHtml = post.author?.url
+    // Build the avatar element (using raw URL with no-referrer policy to bypass standard blocks)
+    const avatarHtml = post.author?.profilePic
+      ? `<img src="${post.author.profilePic}" class="author-avatar" alt="Avatar" referrerpolicy="no-referrer" />`
+      : `<div class="author-avatar placeholder"></div>`;
+
+    // Build hyperlinked entities
+    const authorLink = post.author?.url
       ? `<a href="${post.author.url}" target="_blank" class="post-author">${escapeHtml(post.author.name || "Unknown Author")}</a>`
       : `<span class="post-author">${escapeHtml(post.author?.name || "Unknown Author")}</span>`;
 
-    const groupText = post.group?.name ? ` in ${escapeHtml(post.group.name)}` : '';
+    const groupLink = post.group?.url
+      ? `<a href="${post.group.url}" target="_blank" class="post-group">${escapeHtml(post.group.name)}</a>`
+      : escapeHtml(post.group?.name || "");
+
+    const groupText = post.group?.name && post.group.name !== "Facebook Feed"
+      ? ` <span style="color: var(--text-secondary); font-weight: normal;">in</span> ${groupLink}`
+      : '';
+
+    const timeHtml = post.permalinkUrl
+      ? `<a href="${post.permalinkUrl}" target="_blank" class="post-meta-link">${post.formattedDate || 'View Post'}</a>`
+      : `<span class="post-meta">${post.formattedDate || ''}</span>`;
 
     let imagesContainerHtml = '';
     if (post.images && post.images.length > 0) {
@@ -84,8 +98,13 @@ async function renderFeed(posts) {
 
     card.innerHTML = `
       <div class="post-header">
-        <div>${authorHtml}${groupText}</div>
-        <div class="post-meta">${post.formattedDate || ''}</div>
+        <div class="post-header-left">
+          ${avatarHtml}
+          <div class="post-header-info">
+            <div class="post-author-line">${authorLink}${groupText}</div>
+            <div class="post-meta">${timeHtml}</div>
+          </div>
+        </div>
       </div>
       <div class="post-content">${escapeHtml(post.text || '')}</div>
       ${imagesContainerHtml}
@@ -93,7 +112,7 @@ async function renderFeed(posts) {
 
     container.appendChild(card);
 
-    // Load cached images from IndexedDB
+    // Continue with your existing IndexedDB image loading loop here...
     if (post.images && post.images.length > 0) {
       const imgWrapper = card.querySelector(`#images-${post.postId}`);
       for (const imgUrl of post.images) {

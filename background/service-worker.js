@@ -2,6 +2,7 @@ import { parseGraphQLPayload } from '../lib/parser.js';
 import { savePost, saveMediaBlob, clearAllData } from '../lib/db.js';
 
 let attachedTabId = null;
+const pendingRequests = new Map(); // Tracks requests until they finish downloading
 
 const INITIAL_FILTER_CONFIG = {
   excludedKeywords: [],
@@ -11,27 +12,17 @@ const INITIAL_FILTER_CONFIG = {
 
 function passesInitialFilter(post) {
   if (!post) return false;
-
-  // 1. Exclude specific groups if configured
-  if (post.group?.id && INITIAL_FILTER_CONFIG.excludedGroupIds?.includes(post.group.id)) {
-    return false;
-  }
-
-  // 2. Filter by keywords if configured
+  if (post.group?.id && INITIAL_FILTER_CONFIG.excludedGroupIds?.includes(post.group.id)) return false;
   if (INITIAL_FILTER_CONFIG.requiredKeywords && INITIAL_FILTER_CONFIG.requiredKeywords.length > 0) {
     const text = (post.text || "").toLowerCase();
-    const hasKeyword = INITIAL_FILTER_CONFIG.requiredKeywords.some(kw =>
-      text.includes(kw.toLowerCase())
-    );
+    const hasKeyword = INITIAL_FILTER_CONFIG.requiredKeywords.some(kw => text.includes(kw.toLowerCase()));
     if (!hasKeyword) return false;
   }
-
   return true;
 }
 
 function attachDebugger(tabId) {
   if (attachedTabId === tabId) return;
-
   chrome.debugger.attach({ tabId }, "1.3", () => {
     if (chrome.runtime.lastError) return;
     attachedTabId = tabId;
@@ -54,14 +45,28 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 chrome.debugger.onEvent.addListener((debuggee, method, params) => {
+  // 1. Log the incoming request and wait for it to finish downloading
   if (method === "Network.responseReceived") {
     const { requestId, response } = params;
     const url = response.url;
 
-    const isGraphQL = url.includes('/api/graphql/');
+    // Broadened slightly to catch all graphql endpoints
+    const isGraphQL = url.includes('graphql');
     const isImage = url.includes('scontent') && url.includes('.fbcdn.net');
 
     if (isGraphQL || isImage) {
+      pendingRequests.set(requestId, { url, mimeType: response.mimeType, isGraphQL, isImage });
+    }
+  }
+
+  // 2. Safely grab the body ONLY when it has finished downloading
+  if (method === "Network.loadingFinished") {
+    const { requestId } = params;
+
+    if (pendingRequests.has(requestId)) {
+      const reqData = pendingRequests.get(requestId);
+      pendingRequests.delete(requestId); // Clean up memory
+
       chrome.debugger.sendCommand(
         { tabId: debuggee.tabId },
         "Network.getResponseBody",
@@ -70,23 +75,21 @@ chrome.debugger.onEvent.addListener((debuggee, method, params) => {
           if (chrome.runtime.lastError || !result || !result.body) return;
 
           try {
-            if (isGraphQL) {
+            if (reqData.isGraphQL) {
               const parsedPosts = parseGraphQLPayload(result.body);
-
               for (const post of parsedPosts) {
                 if (passesInitialFilter(post)) {
                   await savePost(post);
                   console.log("[FB Filter] Saved/Updated Post:", post.postId, "by", post.author.name);
                 }
               }
-            } else if (isImage) {
+            } else if (reqData.isImage) {
               const base64Data = result.base64Encoded ? result.body : btoa(result.body);
-              const mimeType = response.mimeType || 'image/jpeg';
-
-              await saveMediaBlob(url, base64Data, mimeType);
+              const mimeType = reqData.mimeType || 'image/jpeg';
+              await saveMediaBlob(reqData.url, base64Data, mimeType);
             }
           } catch (e) {
-            // Ignore stream processing errors
+            // Ignore stream processing errors safely
           }
         }
       );
@@ -98,11 +101,9 @@ chrome.runtime.onStartup.addListener(async () => {
   const settings = await chrome.storage.local.get(['autoPurgeOnClose']);
   if (settings.autoPurgeOnClose) {
     await clearAllData();
-    console.log("[FB Filter] Auto-purged session data on startup.");
   }
 });
 
-// Message listener to receive initial SSR script payloads
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "PROCESS_SSR_SCRIPTS" && Array.isArray(message.payloads)) {
     (async () => {
@@ -111,7 +112,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         for (const post of parsedPosts) {
           if (passesInitialFilter(post)) {
             await savePost(post);
-            console.log("[FB Filter] Saved SSR initial post:", post.postId, "by", post.author.name);
           }
         }
       }

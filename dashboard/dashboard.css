@@ -131,3 +131,47 @@ body {
   background: var(--card-bg);
   border-radius: 8px;
 }
+
+.post-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.author-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  background-color: var(--border-color);
+}
+
+.author-avatar.placeholder {
+  background-color: var(--border-color);
+}
+
+.post-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.post-author-line {
+  font-size: 0.95rem;
+}
+
+.post-group {
+  font-weight: bold;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.post-meta-link {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.post-meta-link:hover, .post-author:hover, .post-group:hover {
+  text-decoration: underline;
+}
