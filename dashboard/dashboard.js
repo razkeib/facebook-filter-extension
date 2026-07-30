@@ -333,12 +333,13 @@ async function renderFeed(posts) {
 }
 
 async function handlePurge() {
-  if (confirm("Are you sure you want to clear all stored posts and media blobs?")) {
+  if (confirm("Are you sure you want to clear all stored posts and media?")) {
     await clearAllData();
     allPosts = [];
     renderStats();
     populateGroupDropdown();
     await renderFeed([]);
+    console.log(`[FB Dashboard] 🗑️ Cleared all stored posts and media`);
   }
 }
 
