@@ -15,25 +15,85 @@ chrome.storage.session.get(['isInitialized']).then(async (result) => {
   }
 });
 
-const INITIAL_FILTER_CONFIG = {
-  excludedKeywords: [],
-  excludedGroupIds: [],
-  requiredKeywords: []
-};
+// --- DYNAMIC STATE CONFIG ---
+let isSniffingEnabled = true;
+let sniffGroupsOnly = false;
+let dynamicFilterConfig = { excludedKeywords: [] };
+const tabUrls = new Map(); // Tracks current tab URLs for sniffing validation
 
-function passesInitialFilter(post) {
-  if (!post) return false;
-  if (post.group?.id && INITIAL_FILTER_CONFIG.excludedGroupIds?.includes(post.group.id)) return false;
-  if (INITIAL_FILTER_CONFIG.requiredKeywords && INITIAL_FILTER_CONFIG.requiredKeywords.length > 0) {
-    const text = (post.text || "").toLowerCase();
-    const hasKeyword = INITIAL_FILTER_CONFIG.requiredKeywords.some(kw => text.includes(kw.toLowerCase()));
-    if (!hasKeyword) return false;
+// 1. Load initial state on startup
+chrome.storage.local.get(['isSniffingEnabled', 'sniffGroupsOnly', 'excludedKeywords']).then((res) => {
+  if (res.isSniffingEnabled !== undefined) isSniffingEnabled = res.isSniffingEnabled;
+  if (res.sniffGroupsOnly !== undefined) sniffGroupsOnly = res.sniffGroupsOnly;
+  if (res.excludedKeywords) dynamicFilterConfig.excludedKeywords = res.excludedKeywords;
+});
+
+// 2. Listen for live updates from Popup
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local') {
+    if (changes.isSniffingEnabled !== undefined) {
+      isSniffingEnabled = changes.isSniffingEnabled.newValue;
+      if (!isSniffingEnabled && attachedTabId) {
+        chrome.debugger.detach({ tabId: attachedTabId });
+        attachedTabId = null;
+        console.log("[FB Filter] Sniffing paused. Debugger detached.");
+      }
+    }
+    if (changes.sniffGroupsOnly !== undefined) {
+      sniffGroupsOnly = changes.sniffGroupsOnly.newValue;
+    }
+    if (changes.excludedKeywords !== undefined) {
+      dynamicFilterConfig.excludedKeywords = changes.excludedKeywords.newValue;
+    }
+  }
+});
+
+// 3. Strict Group URL Validator
+function isAllowedGroupUrl(url) {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.includes('facebook.com')) return false;
+
+    // Remove leading/trailing empty slashes from pathname
+    const segments = parsed.pathname.split('/').filter(Boolean);
+
+    // Strictly enforce exactly 2 segments: ['groups', '<group_id_or_slug>']
+    if (segments.length !== 2) return false;
+    if (segments[0] !== 'groups') return false;
+
+    const groupIdentifier = segments[1].toLowerCase();
+    if (groupIdentifier === 'feed' || groupIdentifier === 'discover') {
+      return false;
+    }
+
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 4. Pre-Ingestion Filter
+function passesInitialFilter(post, tabUrl) {
+  if (!post || !isSniffingEnabled) return false;
+
+  // Enforce Group-Only constraint if enabled
+  if (sniffGroupsOnly && !isAllowedGroupUrl(tabUrl)) {
+    return false;
+  }
+
+  if (dynamicFilterConfig.excludedKeywords.length > 0 && post.text) {
+    const textLower = post.text.toLowerCase();
+    const hasExcluded = dynamicFilterConfig.excludedKeywords.some(kw =>
+      textLower.includes(kw.toLowerCase())
+    );
+    if (hasExcluded) return false;
   }
   return true;
 }
 
 function attachDebugger(tabId) {
-  if (attachedTabId === tabId) return;
+  if (!isSniffingEnabled || attachedTabId === tabId) return;
   chrome.debugger.attach({ tabId }, "1.3", () => {
     if (chrome.runtime.lastError) return;
     attachedTabId = tabId;
@@ -41,18 +101,20 @@ function attachDebugger(tabId) {
   });
 }
 
-chrome.action.onClicked.addListener(() => {
-  chrome.tabs.create({ url: "dashboard/dashboard.html" });
-});
-
-chrome.debugger.onDetach.addListener((source) => {
-  if (source.tabId === attachedTabId) attachedTabId = null;
-});
-
+// Track URL updates on Facebook tabs
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url && tab.url.includes('facebook.com')) {
+  if (tab.url) {
+    tabUrls.set(tabId, tab.url);
+  }
+
+  if (isSniffingEnabled && changeInfo.status === 'complete' && tab.url && tab.url.includes('facebook.com')) {
     attachDebugger(tabId);
   }
+});
+
+// Clean up tab URL cache when tabs are closed
+chrome.tabs.onRemoved.addListener((tabId) => {
+  tabUrls.delete(tabId);
 });
 
 chrome.debugger.onEvent.addListener((debuggee, method, params) => {
@@ -84,16 +146,13 @@ chrome.debugger.onEvent.addListener((debuggee, method, params) => {
 
           try {
             if (reqData.isGraphQL) {
+              const currentTabUrl = tabUrls.get(debuggee.tabId);
               const parsedPosts = parseGraphQLPayload(result.body);
               for (const post of parsedPosts) {
-                if (passesInitialFilter(post)) {
+                if (passesInitialFilter(post, currentTabUrl)) {
                   await savePost(post);
                   console.log("[FB Filter] Saved/Updated Post:", post.postId, "by", post.author.name);
-
-                  // NEW: Broadcast to the dashboard that a post was saved/updated
-                  chrome.runtime.sendMessage({ type: "NEW_POST_SAVED", payload: post }).catch(() => {
-                    // Ignore error if dashboard is not open
-                  });
+                  chrome.runtime.sendMessage({ type: "NEW_POST_SAVED", payload: post }).catch(() => {});
                 }
               }
             } else if (reqData.isImage) {
@@ -120,14 +179,13 @@ chrome.runtime.onStartup.addListener(async () => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "PROCESS_SSR_SCRIPTS" && Array.isArray(message.payloads)) {
+    const senderUrl = sender.tab ? sender.tab.url : null;
     (async () => {
       for (const rawString of message.payloads) {
         const parsedPosts = parseGraphQLPayload(rawString);
         for (const post of parsedPosts) {
-          if (passesInitialFilter(post)) {
+          if (passesInitialFilter(post, senderUrl)) {
             await savePost(post);
-
-            // NEW: Broadcast to the dashboard
             chrome.runtime.sendMessage({ type: "NEW_POST_SAVED", payload: post }).catch(() => {});
           }
         }

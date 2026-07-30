@@ -17,7 +17,8 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Open FB Filter Dashboard"
+    "default_title": "Open FB Filter Settings",
+    "default_popup": "popup/popup.html"
   },
   "content_scripts": [
       {
