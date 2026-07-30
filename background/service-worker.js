@@ -89,6 +89,11 @@ chrome.debugger.onEvent.addListener((debuggee, method, params) => {
                 if (passesInitialFilter(post)) {
                   await savePost(post);
                   console.log("[FB Filter] Saved/Updated Post:", post.postId, "by", post.author.name);
+
+                  // NEW: Broadcast to the dashboard that a post was saved/updated
+                  chrome.runtime.sendMessage({ type: "NEW_POST_SAVED", payload: post }).catch(() => {
+                    // Ignore error if dashboard is not open
+                  });
                 }
               }
             } else if (reqData.isImage) {
@@ -121,6 +126,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         for (const post of parsedPosts) {
           if (passesInitialFilter(post)) {
             await savePost(post);
+
+            // NEW: Broadcast to the dashboard
+            chrome.runtime.sendMessage({ type: "NEW_POST_SAVED", payload: post }).catch(() => {});
           }
         }
       }

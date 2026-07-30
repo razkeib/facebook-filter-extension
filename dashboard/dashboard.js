@@ -44,6 +44,41 @@ async function initDashboard() {
     updateDropdownLabel();
     filterAndRender();
   });
+
+  // NEW: Listen for Live Updates from the Service Worker
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === "NEW_POST_SAVED" && message.payload) {
+      handleLivePostUpdate(message.payload);
+    }
+  });
+}
+
+// NEW: Handle incoming live posts seamlessly
+async function handleLivePostUpdate(newPost) {
+  const existingIndex = allPosts.findIndex(p => p.postId === newPost.postId);
+
+  if (existingIndex > -1) {
+    // Update existing post in memory
+    allPosts[existingIndex] = newPost;
+  } else {
+    // Add new post to memory
+    allPosts.unshift(newPost);
+  }
+
+  renderStats();
+
+  // Check if we need to add a new group to the dropdown
+  if (newPost.group?.name) {
+    const existingGroups = Array.from(document.querySelectorAll('.group-cb')).map(cb => cb.value);
+    if (!existingGroups.includes(newPost.group.name)) {
+      populateGroupDropdown(); // Repopulate to include the new group
+    }
+  }
+
+  // Re-run the current filters. If the post passes, we re-render.
+  // (In a massive app we'd target just the DOM node, but for this scale,
+  // relying on filterAndRender keeps your search/dropdown logic perfectly synced).
+  filterAndRender();
 }
 
 async function renderStats() {
@@ -137,6 +172,54 @@ function filterAndRender() {
   renderFeed(filtered);
 }
 
+// NEW: Refactored card creation into its own function for cleanliness
+function createPostCard(post) {
+  const card = document.createElement('article');
+  card.className = 'post-card';
+  card.dataset.id = post.postId;
+
+  const avatarHtml = post.author?.profilePic
+    ? `<img src="${post.author.profilePic}" class="author-avatar" alt="Avatar" referrerpolicy="no-referrer" />`
+    : `<div class="author-avatar placeholder"></div>`;
+
+  const authorLink = post.author?.url
+    ? `<a href="${post.author.url}" target="_blank" class="post-author">${escapeHtml(post.author.name || "Unknown Author")}</a>`
+    : `<span class="post-author">${escapeHtml(post.author?.name || "Unknown Author")}</span>`;
+
+  const groupLink = post.group?.url
+    ? `<a href="${post.group.url}" target="_blank" class="post-group">${escapeHtml(post.group.name)}</a>`
+    : escapeHtml(post.group?.name || "");
+
+  const groupText = post.group?.name && post.group.name !== "Facebook Feed"
+    ? ` <span style="color: var(--text-secondary); font-weight: normal;">in</span> ${groupLink}`
+    : '';
+
+  const timeHtml = post.permalinkUrl
+    ? `<a href="${post.permalinkUrl}" target="_blank" class="post-meta-link">${post.formattedDate || 'View Post'}</a>`
+    : `<span class="post-meta">${post.formattedDate || ''}</span>`;
+
+  let imagesContainerHtml = '';
+  if (post.images && post.images.length > 0) {
+    imagesContainerHtml = `<div class="post-images"></div>`;
+  }
+
+  card.innerHTML = `
+    <div class="post-header">
+      <div class="post-header-left">
+        ${avatarHtml}
+        <div class="post-header-info">
+          <div class="post-author-line">${authorLink}${groupText}</div>
+          <div class="post-meta">${timeHtml}</div>
+        </div>
+      </div>
+    </div>
+    <div class="post-content">${escapeHtml(post.text || '')}</div>
+    ${imagesContainerHtml}
+  `;
+  return card;
+}
+
+// UPDATED: renderFeed now leverages the isolated createPostCard logic
 async function renderFeed(posts) {
   const container = document.getElementById('feed-container');
   if (!container) return;
@@ -151,51 +234,9 @@ async function renderFeed(posts) {
   }
 
   for (const post of posts) {
-    const card = document.createElement('article');
-    card.className = 'post-card';
-
-    const avatarHtml = post.author?.profilePic
-      ? `<img src="${post.author.profilePic}" class="author-avatar" alt="Avatar" referrerpolicy="no-referrer" />`
-      : `<div class="author-avatar placeholder"></div>`;
-
-    const authorLink = post.author?.url
-      ? `<a href="${post.author.url}" target="_blank" class="post-author">${escapeHtml(post.author.name || "Unknown Author")}</a>`
-      : `<span class="post-author">${escapeHtml(post.author?.name || "Unknown Author")}</span>`;
-
-    const groupLink = post.group?.url
-      ? `<a href="${post.group.url}" target="_blank" class="post-group">${escapeHtml(post.group.name)}</a>`
-      : escapeHtml(post.group?.name || "");
-
-    const groupText = post.group?.name && post.group.name !== "Facebook Feed"
-      ? ` <span style="color: var(--text-secondary); font-weight: normal;">in</span> ${groupLink}`
-      : '';
-
-    const timeHtml = post.permalinkUrl
-      ? `<a href="${post.permalinkUrl}" target="_blank" class="post-meta-link">${post.formattedDate || 'View Post'}</a>`
-      : `<span class="post-meta">${post.formattedDate || ''}</span>`;
-
-    let imagesContainerHtml = '';
-    if (post.images && post.images.length > 0) {
-      imagesContainerHtml = `<div class="post-images"></div>`;
-    }
-
-    card.innerHTML = `
-      <div class="post-header">
-        <div class="post-header-left">
-          ${avatarHtml}
-          <div class="post-header-info">
-            <div class="post-author-line">${authorLink}${groupText}</div>
-            <div class="post-meta">${timeHtml}</div>
-          </div>
-        </div>
-      </div>
-      <div class="post-content">${escapeHtml(post.text || '')}</div>
-      ${imagesContainerHtml}
-    `;
-
+    const card = createPostCard(post);
     container.appendChild(card);
 
-    // Render media blobs using class target inside current card (avoids ID selector errors)
     if (post.images && post.images.length > 0) {
       const imgWrapper = card.querySelector('.post-images');
       if (imgWrapper) {
