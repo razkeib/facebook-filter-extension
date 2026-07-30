@@ -2,7 +2,18 @@ import { parseGraphQLPayload } from '../lib/parser.js';
 import { savePost, saveMediaBlob, clearAllData } from '../lib/db.js';
 
 let attachedTabId = null;
-const pendingRequests = new Map(); // Tracks requests until they finish downloading
+const pendingRequests = new Map();
+
+// --- RELOAD PURGE LOGIC ---
+// chrome.storage.session is cleared ONLY on extension reload or browser close.
+// It survives standard service worker sleep/wake cycles.
+chrome.storage.session.get(['isInitialized']).then(async (result) => {
+  if (!result.isInitialized) {
+    await clearAllData();
+    console.log("[FB Filter] Extension reloaded or started. Database purged.");
+    await chrome.storage.session.set({ isInitialized: true });
+  }
+});
 
 const INITIAL_FILTER_CONFIG = {
   excludedKeywords: [],
@@ -45,12 +56,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 chrome.debugger.onEvent.addListener((debuggee, method, params) => {
-  // 1. Log the incoming request and wait for it to finish downloading
   if (method === "Network.responseReceived") {
     const { requestId, response } = params;
     const url = response.url;
 
-    // Broadened slightly to catch all graphql endpoints
     const isGraphQL = url.includes('graphql');
     const isImage = url.includes('scontent') && url.includes('.fbcdn.net');
 
@@ -59,13 +68,12 @@ chrome.debugger.onEvent.addListener((debuggee, method, params) => {
     }
   }
 
-  // 2. Safely grab the body ONLY when it has finished downloading
   if (method === "Network.loadingFinished") {
     const { requestId } = params;
 
     if (pendingRequests.has(requestId)) {
       const reqData = pendingRequests.get(requestId);
-      pendingRequests.delete(requestId); // Clean up memory
+      pendingRequests.delete(requestId);
 
       chrome.debugger.sendCommand(
         { tabId: debuggee.tabId },
@@ -89,7 +97,7 @@ chrome.debugger.onEvent.addListener((debuggee, method, params) => {
               await saveMediaBlob(reqData.url, base64Data, mimeType);
             }
           } catch (e) {
-            // Ignore stream processing errors safely
+            // Ignore stream processing errors
           }
         }
       );
@@ -97,6 +105,7 @@ chrome.debugger.onEvent.addListener((debuggee, method, params) => {
   }
 });
 
+// Legacy local storage purge check (optional fallback)
 chrome.runtime.onStartup.addListener(async () => {
   const settings = await chrome.storage.local.get(['autoPurgeOnClose']);
   if (settings.autoPurgeOnClose) {

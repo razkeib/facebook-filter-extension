@@ -21,9 +21,25 @@
 
     <div class="filter-controls">
       <input type="text" id="search-input" placeholder="Search posts by author or text..." />
-      <select id="group-filter">
-        <option value="ALL">All Sources</option>
-      </select>
+
+      <!-- Multi-Select Custom Dropdown Menu -->
+      <div class="custom-dropdown" id="group-dropdown-wrapper">
+        <button class="dropdown-trigger" id="dropdown-btn">
+          <span id="dropdown-label">All Sources</span>
+          <span class="dropdown-arrow">▼</span>
+        </button>
+
+        <div class="dropdown-menu hidden" id="dropdown-menu">
+          <label class="dropdown-item toggle-all-item">
+            <input type="checkbox" id="cb-toggle-all" checked />
+            <strong>Toggle All / Select All</strong>
+          </label>
+          <div class="dropdown-divider"></div>
+          <div id="dropdown-options-list" class="dropdown-options-list">
+            <!-- Dynamic source checkboxes loaded here -->
+          </div>
+        </div>
+      </div>
     </div>
 
     <main class="feed-grid" id="feed-container">

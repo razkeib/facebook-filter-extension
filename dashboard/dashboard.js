@@ -1,6 +1,5 @@
 import { getAllPosts, getMediaBlob, getMediaCount, clearAllData } from '../lib/db.js';
 
-
 let allPosts = [];
 const imageObjectUrls = new Set();
 
@@ -9,18 +8,42 @@ async function initDashboard() {
 
   try {
     allPosts = await getAllPosts();
-    console.log("[FB Dashboard] Fetched posts from IndexedDB:", allPosts);
-
     renderStats();
     populateGroupDropdown();
     await renderFeed(allPosts);
   } catch (err) {
-    console.error("[FB Dashboard] Error loading posts from DB:", err);
+    console.error("[FB Dashboard] Error loading posts from DB:", err?.message || err);
   }
 
+  // Setup Event Listeners
   document.getElementById('search-input')?.addEventListener('input', filterAndRender);
-  document.getElementById('group-filter')?.addEventListener('change', filterAndRender);
   document.getElementById('btn-purge')?.addEventListener('click', handlePurge);
+
+  // Dropdown toggle & Click-Outside logic
+  const dropdownBtn = document.getElementById('dropdown-btn');
+  const dropdownMenu = document.getElementById('dropdown-menu');
+
+  dropdownBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdownMenu?.classList.toggle('hidden');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!document.getElementById('group-dropdown-wrapper')?.contains(e.target)) {
+      dropdownMenu?.classList.add('hidden');
+    }
+  });
+
+  // Toggle All Checkbox Listener
+  document.getElementById('cb-toggle-all')?.addEventListener('change', (e) => {
+    const isChecked = e.target.checked;
+    const itemCheckboxes = document.querySelectorAll('.group-cb');
+    itemCheckboxes.forEach(cb => {
+      cb.checked = isChecked;
+    });
+    updateDropdownLabel();
+    filterAndRender();
+  });
 }
 
 async function renderStats() {
@@ -35,21 +58,83 @@ async function renderStats() {
 }
 
 function populateGroupDropdown() {
-  const groupSelect = document.getElementById('group-filter');
-  if (!groupSelect) return;
+  const container = document.getElementById('dropdown-options-list');
+  if (!container) return;
 
   const groups = new Set();
   allPosts.forEach(post => {
     if (post.group?.name) groups.add(post.group.name);
   });
 
-  groupSelect.innerHTML = '<option value="ALL">All Sources</option>';
+  container.innerHTML = '';
+
   groups.forEach(groupName => {
-    const option = document.createElement('option');
-    option.value = groupName;
-    option.textContent = groupName;
-    groupSelect.appendChild(option);
+    const label = document.createElement('label');
+    label.className = 'dropdown-item';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = groupName;
+    cb.checked = true;
+    cb.className = 'group-cb';
+    cb.addEventListener('change', () => {
+      syncToggleAllCheckbox();
+      updateDropdownLabel();
+      filterAndRender();
+    });
+
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(groupName));
+    container.appendChild(label);
   });
+
+  updateDropdownLabel();
+}
+
+function syncToggleAllCheckbox() {
+  const allCBs = document.querySelectorAll('.group-cb');
+  const checkedCBs = document.querySelectorAll('.group-cb:checked');
+  const toggleAll = document.getElementById('cb-toggle-all');
+
+  if (toggleAll) {
+    toggleAll.checked = allCBs.length > 0 && allCBs.length === checkedCBs.length;
+  }
+}
+
+function updateDropdownLabel() {
+  const labelEl = document.getElementById('dropdown-label');
+  if (!labelEl) return;
+
+  const allCBs = document.querySelectorAll('.group-cb');
+  const checkedCBs = document.querySelectorAll('.group-cb:checked');
+
+  if (allCBs.length === 0) {
+    labelEl.textContent = 'All Sources';
+  } else if (checkedCBs.length === allCBs.length) {
+    labelEl.textContent = 'All Sources Selected';
+  } else if (checkedCBs.length === 0) {
+    labelEl.textContent = 'No Sources Selected';
+  } else {
+    labelEl.textContent = `${checkedCBs.length} of ${allCBs.length} Selected`;
+  }
+}
+
+function filterAndRender() {
+  const searchTerm = (document.getElementById('search-input')?.value || '').toLowerCase();
+
+  const checkedBoxes = document.querySelectorAll('.group-cb:checked');
+  const selectedGroups = new Set(Array.from(checkedBoxes).map(cb => cb.value));
+
+  const filtered = allPosts.filter(post => {
+    const matchesSearch = (post.text || '').toLowerCase().includes(searchTerm) ||
+                          (post.author?.name || '').toLowerCase().includes(searchTerm);
+
+    const matchesGroup = post.group?.name ? selectedGroups.has(post.group.name) : false;
+
+    return matchesSearch && matchesGroup;
+  });
+
+  renderFeed(filtered);
 }
 
 async function renderFeed(posts) {
@@ -69,12 +154,10 @@ async function renderFeed(posts) {
     const card = document.createElement('article');
     card.className = 'post-card';
 
-    // Build the avatar element (using raw URL with no-referrer policy to bypass standard blocks)
     const avatarHtml = post.author?.profilePic
       ? `<img src="${post.author.profilePic}" class="author-avatar" alt="Avatar" referrerpolicy="no-referrer" />`
       : `<div class="author-avatar placeholder"></div>`;
 
-    // Build hyperlinked entities
     const authorLink = post.author?.url
       ? `<a href="${post.author.url}" target="_blank" class="post-author">${escapeHtml(post.author.name || "Unknown Author")}</a>`
       : `<span class="post-author">${escapeHtml(post.author?.name || "Unknown Author")}</span>`;
@@ -93,7 +176,7 @@ async function renderFeed(posts) {
 
     let imagesContainerHtml = '';
     if (post.images && post.images.length > 0) {
-      imagesContainerHtml = `<div class="post-images" id="images-${post.postId}"></div>`;
+      imagesContainerHtml = `<div class="post-images"></div>`;
     }
 
     card.innerHTML = `
@@ -112,49 +195,36 @@ async function renderFeed(posts) {
 
     container.appendChild(card);
 
-    // Continue with your existing IndexedDB image loading loop here...
+    // Render media blobs using class target inside current card (avoids ID selector errors)
     if (post.images && post.images.length > 0) {
-      const imgWrapper = card.querySelector(`#images-${post.postId}`);
-      for (const imgUrl of post.images) {
-        try {
-          const mediaRecord = await getMediaBlob(imgUrl);
-          if (mediaRecord) {
-            const byteCharacters = atob(mediaRecord.base64Data);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-              byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: mediaRecord.mimeType });
-            const objectUrl = URL.createObjectURL(blob);
-            imageObjectUrls.add(objectUrl);
+      const imgWrapper = card.querySelector('.post-images');
+      if (imgWrapper) {
+        for (const imgUrl of post.images) {
+          try {
+            const mediaRecord = await getMediaBlob(imgUrl);
+            if (mediaRecord) {
+              const byteCharacters = atob(mediaRecord.base64Data);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              const blob = new Blob([byteArray], { type: mediaRecord.mimeType });
+              const objectUrl = URL.createObjectURL(blob);
+              imageObjectUrls.add(objectUrl);
 
-            const imgEl = document.createElement('img');
-            imgEl.src = objectUrl;
-            imgEl.alt = "Post image";
-            imgWrapper.appendChild(imgEl);
+              const imgEl = document.createElement('img');
+              imgEl.src = objectUrl;
+              imgEl.alt = "Post image";
+              imgWrapper.appendChild(imgEl);
+            }
+          } catch (e) {
+            console.warn(`[FB Dashboard] Failed to load image blob for post ${post.postId}`, e);
           }
-        } catch (e) {
-          console.warn(`[FB Dashboard] Failed to load image blob for post ${post.postId}`, e);
         }
       }
     }
   }
-}
-
-function filterAndRender() {
-  const searchTerm = (document.getElementById('search-input')?.value || '').toLowerCase();
-  const selectedGroup = document.getElementById('group-filter')?.value || 'ALL';
-
-  const filtered = allPosts.filter(post => {
-    const matchesSearch = (post.text || '').toLowerCase().includes(searchTerm) ||
-                          (post.author?.name || '').toLowerCase().includes(searchTerm);
-    const matchesGroup = selectedGroup === 'ALL' || post.group?.name === selectedGroup;
-
-    return matchesSearch && matchesGroup;
-  });
-
-  renderFeed(filtered);
 }
 
 async function handlePurge() {
@@ -162,6 +232,7 @@ async function handlePurge() {
     await clearAllData();
     allPosts = [];
     renderStats();
+    populateGroupDropdown();
     await renderFeed([]);
   }
 }
