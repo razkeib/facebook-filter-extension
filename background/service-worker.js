@@ -1,5 +1,5 @@
 import { parseGraphQLPayload } from '../lib/parser.js';
-import { savePost, saveMediaBlob, clearAllData } from '../lib/db.js';
+import { savePost, saveMediaBlob, getMediaBlob, clearAllData } from '../lib/db.js';
 
 let attachedTabId = null;
 const pendingRequests = new Map();
@@ -79,16 +79,22 @@ function passesInitialFilter(post, tabUrl) {
 
   // Enforce Group-Only constraint if enabled
   if (sniffGroupsOnly && !isAllowedGroupUrl(tabUrl)) {
+    console.log(`[FB Filter] 🚫 Discarded Post ${post.postId} by ${post.author?.name}: Not an allowed group URL.`);
     return false;
   }
 
   if (dynamicFilterConfig.excludedKeywords.length > 0 && post.text) {
     const textLower = post.text.toLowerCase();
-    const hasExcluded = dynamicFilterConfig.excludedKeywords.some(kw =>
+    const matchedKeyword = dynamicFilterConfig.excludedKeywords.find(kw =>
       textLower.includes(kw.toLowerCase())
     );
-    if (hasExcluded) return false;
+
+    if (matchedKeyword) {
+      console.log(`[FB Filter] 🚫 Discarded Post ${post.postId} by ${post.author?.name}: Matched excluded keyword "${matchedKeyword}".`);
+      return false;
+    }
   }
+
   return true;
 }
 
@@ -150,15 +156,37 @@ chrome.debugger.onEvent.addListener((debuggee, method, params) => {
               const parsedPosts = parseGraphQLPayload(result.body);
               for (const post of parsedPosts) {
                 if (passesInitialFilter(post, currentTabUrl)) {
-                  await savePost(post);
-                  console.log("[FB Filter] Saved/Updated Post:", post.postId, "by", post.author.name);
+                  const saveResult = await savePost(post);
+
+                  if (saveResult && saveResult.status === 'inserted') {
+                    console.log("[FB Filter] 🟢 NEW Post Captured:", post.postId, "by", post.author?.name);
+                  } else if (saveResult && saveResult.status === 'updated') {
+                    console.log("[FB Filter] 🟡 UPDATED Existing Post:", post.postId, "by", post.author?.name);
+                  }
+
                   chrome.runtime.sendMessage({ type: "NEW_POST_SAVED", payload: post }).catch(() => {});
                 }
               }
             } else if (reqData.isImage) {
+              const currentTabUrl = tabUrls.get(debuggee.tabId);
+
+              // 1. Enforce Group-Only constraint for images
+              if (sniffGroupsOnly && !isAllowedGroupUrl(currentTabUrl)) {
+                console.debug(`[FB Filter] 🚫 Skipped Image (Not an allowed group URL):`, reqData.url);
+                return; // Skip caching image if outside an allowed group
+              }
+
+              // 2. Avoid re-caching if the image already exists in IndexedDB
+              const existingMedia = await getMediaBlob(reqData.url);
+              if (existingMedia) {
+                console.debug(`[FB Filter] ⏭️ Skipped Image (Already cached in DB):`, reqData.url);
+                return; // Already cached, skip saving again
+              }
+
               const base64Data = result.base64Encoded ? result.body : btoa(result.body);
               const mimeType = reqData.mimeType || 'image/jpeg';
               await saveMediaBlob(reqData.url, base64Data, mimeType);
+              console.log(`[FB Filter] 🖼️ Cached New Image`);
             }
           } catch (e) {
             // Ignore stream processing errors
@@ -185,7 +213,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const parsedPosts = parseGraphQLPayload(rawString);
         for (const post of parsedPosts) {
           if (passesInitialFilter(post, senderUrl)) {
-            await savePost(post);
+            const saveResult = await savePost(post);
+
+            if (saveResult && saveResult.status === 'inserted') {
+              console.log("[FB Filter] 🟢 NEW Post Captured (SSR):", post.postId, "by", post.author?.name);
+            } else if (saveResult && saveResult.status === 'updated') {
+              console.log("[FB Filter] 🟡 UPDATED Existing Post (SSR):", post.postId, "by", post.author?.name);
+            }
+
             chrome.runtime.sendMessage({ type: "NEW_POST_SAVED", payload: post }).catch(() => {});
           }
         }
