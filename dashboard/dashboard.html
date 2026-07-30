@@ -20,7 +20,11 @@
     </header>
 
     <div class="filter-controls">
-      <input type="text" id="search-input" placeholder="Search posts by author or text..." />
+      <!-- Single Search Wrapper spanning full width -->
+      <div class="search-wrapper" style="display: flex; gap: 8px; align-items: center; width: 100%;">
+        <input type="text" id="search-input" placeholder="Search posts... (e.g. crypto AND btc, author:&quot;John&quot;, /hiring/i)" style="flex: 1; min-width: 0;" />
+        <button id="btn-cheat-sheet" class="btn-secondary" title="Search Cheat Sheet">❓ Guide</button>
+      </div>
 
       <!-- Multi-Select Custom Dropdown Menu -->
       <div class="custom-dropdown" id="group-dropdown-wrapper">
@@ -46,6 +50,43 @@
       <div class="empty-state">No posts captured yet. Scroll Facebook to start collecting!</div>
     </main>
   </div>
+
+  <!-- Slide-Out Cheat Sheet Drawer -->
+  <div id="cheat-sheet-drawer" class="drawer">
+    <div class="drawer-header">
+      <h3>Advanced Search Guide</h3>
+      <button id="btn-close-drawer" class="drawer-close">&times;</button>
+    </div>
+    <div class="drawer-content">
+      <h4>Boolean Operators</h4>
+      <ul>
+        <li><code>AND</code> / <code>&&</code>: <code>crypto AND btc</code></li>
+        <li>Implicit AND: <code>crypto btc</code></li>
+        <li><code>OR</code> / <code>||</code>: <code>crypto OR stock</code></li>
+        <li><code>NOT</code> / <code>!</code>: <code>NOT scam</code></li>
+        <li>Grouping: <code>(crypto OR btc) AND NOT scam</code></li>
+      </ul>
+
+      <h4>Exact Strings</h4>
+      <ul>
+        <li>Wrap in quotes: <code>"free shipping"</code></li>
+      </ul>
+
+      <h4>Field Targeting</h4>
+      <ul>
+        <li><code>author:"Name"</code></li>
+        <li><code>group:"Name"</code></li>
+        <li><code>text:keyword</code></li>
+      </ul>
+
+      <h4>Regular Expressions (regex)</h4>
+      <ul>
+        <li>Wrap in slashes: <code>/b[aeiou]y/i</code></li>
+        <li>Combined: <code>author:/smith/i AND /hiring/</code></li>
+      </ul>
+    </div>
+  </div>
+  <div id="drawer-backdrop" class="drawer-backdrop"></div>
 
   <script type="module" src="dashboard.js"></script>
 </body>

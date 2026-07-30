@@ -1,4 +1,5 @@
 import { getAllPosts, getMediaBlob, getMediaCount, clearAllData } from '../lib/db.js';
+import { executeSearch } from '../lib/search-engine.js';
 
 let allPosts = [];
 const imageObjectUrls = new Set();
@@ -45,15 +46,30 @@ async function initDashboard() {
     filterAndRender();
   });
 
-  // NEW: Listen for Live Updates from the Service Worker
+  // Listen for Live Updates from the Service Worker
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "NEW_POST_SAVED" && message.payload) {
       handleLivePostUpdate(message.payload);
     }
   });
+
+  // --- Search Cheatsheet Controls ---
+  const drawer = document.getElementById('cheat-sheet-drawer');
+  const backdrop = document.getElementById('drawer-backdrop');
+  const btnCheatSheet = document.getElementById('btn-cheat-sheet');
+  const btnCloseDrawer = document.getElementById('btn-close-drawer');
+
+  function toggleDrawer(open) {
+    drawer?.classList.toggle('open', open);
+    backdrop?.classList.toggle('open', open);
+  }
+
+  btnCheatSheet?.addEventListener('click', () => toggleDrawer(true));
+  btnCloseDrawer?.addEventListener('click', () => toggleDrawer(false));
+  backdrop?.addEventListener('click', () => toggleDrawer(false));
 }
 
-// NEW: Handle incoming live posts seamlessly
+// Handle incoming live posts seamlessly
 async function handleLivePostUpdate(newPost) {
   const existingIndex = allPosts.findIndex(p => p.postId === newPost.postId);
 
@@ -155,21 +171,20 @@ function updateDropdownLabel() {
 }
 
 function filterAndRender() {
-  const searchTerm = (document.getElementById('search-input')?.value || '').toLowerCase();
+  const query = document.getElementById('search-input')?.value || '';
 
   const checkedBoxes = document.querySelectorAll('.group-cb:checked');
   const selectedGroups = new Set(Array.from(checkedBoxes).map(cb => cb.value));
 
-  const filtered = allPosts.filter(post => {
-    const matchesSearch = (post.text || '').toLowerCase().includes(searchTerm) ||
-                          (post.author?.name || '').toLowerCase().includes(searchTerm);
-
-    const matchesGroup = post.group?.name ? selectedGroups.has(post.group.name) : false;
-
-    return matchesSearch && matchesGroup;
+  // 1. Filter by Checkboxes first
+  let filteredPosts = allPosts.filter(post => {
+    return post.group?.name ? selectedGroups.has(post.group.name) : false;
   });
 
-  renderFeed(filtered);
+  // 2. Apply the Advanced Search Engine
+  filteredPosts = executeSearch(query, filteredPosts);
+
+  renderFeed(filteredPosts);
 }
 
 // NEW: Refactored card creation into its own function for cleanliness
