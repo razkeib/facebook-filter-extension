@@ -18,6 +18,7 @@ async function initDashboard() {
 
   // Setup Event Listeners
   document.getElementById('search-input')?.addEventListener('input', filterAndRender);
+  document.getElementById('cb-hide-text-duplicates')?.addEventListener('change', filterAndRender);
   document.getElementById('btn-purge')?.addEventListener('click', handlePurge);
 
   // Dropdown toggle & Click-Outside logic
@@ -69,31 +70,24 @@ async function initDashboard() {
   backdrop?.addEventListener('click', () => toggleDrawer(false));
 }
 
-// Handle incoming live posts seamlessly
 async function handleLivePostUpdate(newPost) {
   const existingIndex = allPosts.findIndex(p => p.postId === newPost.postId);
 
   if (existingIndex > -1) {
-    // Update existing post in memory
     allPosts[existingIndex] = newPost;
   } else {
-    // Add new post to memory
     allPosts.unshift(newPost);
   }
 
   renderStats();
 
-  // Check if we need to add a new group to the dropdown
   if (newPost.group?.name) {
     const existingGroups = Array.from(document.querySelectorAll('.group-cb')).map(cb => cb.value);
     if (!existingGroups.includes(newPost.group.name)) {
-      populateGroupDropdown(); // Repopulate to include the new group
+      populateGroupDropdown();
     }
   }
 
-  // Re-run the current filters. If the post passes, we re-render.
-  // (In a massive app we'd target just the DOM node, but for this scale,
-  // relying on filterAndRender keeps your search/dropdown logic perfectly synced).
   filterAndRender();
 }
 
@@ -172,22 +166,34 @@ function updateDropdownLabel() {
 
 function filterAndRender() {
   const query = document.getElementById('search-input')?.value || '';
+  const hideDuplicates = document.getElementById('cb-hide-text-duplicates')?.checked || false;
 
   const checkedBoxes = document.querySelectorAll('.group-cb:checked');
   const selectedGroups = new Set(Array.from(checkedBoxes).map(cb => cb.value));
 
-  // 1. Filter by Checkboxes first
+  // 1. Filter by Group Checkboxes
   let filteredPosts = allPosts.filter(post => {
     return post.group?.name ? selectedGroups.has(post.group.name) : false;
   });
 
-  // 2. Apply the Advanced Search Engine
+  // 2. Apply Search Engine
   filteredPosts = executeSearch(query, filteredPosts);
+
+  // 3. Exact Text Deduplication (if checked)
+  if (hideDuplicates) {
+    const seenTexts = new Set();
+    filteredPosts = filteredPosts.filter(post => {
+      const normText = (post.text || '').trim().toLowerCase();
+      if (!normText) return true; // Keep posts with no text (e.g., photo-only)
+      if (seenTexts.has(normText)) return false;
+      seenTexts.add(normText);
+      return true;
+    });
+  }
 
   renderFeed(filteredPosts);
 }
 
-// NEW: Refactored card creation into its own function for cleanliness
 function createPostCard(post) {
   const card = document.createElement('article');
   card.className = 'post-card';
@@ -234,9 +240,13 @@ function createPostCard(post) {
   return card;
 }
 
-// UPDATED: renderFeed now leverages the isolated createPostCard logic
 async function renderFeed(posts) {
   const container = document.getElementById('feed-container');
+  const showingStat = document.getElementById('stat-showing-count');
+
+  // Update the showing count stat dynamically
+  if (showingStat) showingStat.textContent = posts ? posts.length : 0;
+
   if (!container) return;
 
   container.innerHTML = '';

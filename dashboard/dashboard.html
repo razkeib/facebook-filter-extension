@@ -11,7 +11,6 @@
     <header class="app-header">
       <h1>FB Feed Dashboard</h1>
       <div class="stats-bar">
-        <span>Posts Captured: <strong id="stat-post-count">0</strong></span>
         <span>Media Blobs Cached: <strong id="stat-media-count">0</strong></span>
       </div>
       <div class="actions">
@@ -20,30 +19,44 @@
     </header>
 
     <div class="filter-controls">
-      <!-- Single Search Wrapper spanning full width -->
-      <div class="search-wrapper" style="display: flex; gap: 8px; align-items: center; width: 100%;">
-        <input type="text" id="search-input" placeholder="Search posts... (e.g. crypto AND btc, author:&quot;John&quot;, /hiring/i)" style="flex: 1; min-width: 0;" />
-        <button id="btn-cheat-sheet" class="btn-secondary" title="Search Cheat Sheet">❓ Guide</button>
-      </div>
+      <!-- Top Controls Row: Search Wrapper & Sources Dropdown -->
+      <div class="filter-row top-row">
+        <div class="search-wrapper">
+          <input type="text" id="search-input" placeholder="Search posts... (e.g. crypto AND btc, author:&quot;John&quot;, /hiring/i)" />
+          <button id="btn-cheat-sheet" class="btn-secondary" title="Search Cheat Sheet">❓</button>
+        </div>
 
-      <!-- Multi-Select Custom Dropdown Menu -->
-      <div class="custom-dropdown" id="group-dropdown-wrapper">
-        <button class="dropdown-trigger" id="dropdown-btn">
-          <span id="dropdown-label">All Sources</span>
-          <span class="dropdown-arrow">▼</span>
-        </button>
+        <!-- Multi-Select Custom Dropdown Menu -->
+        <div class="custom-dropdown" id="group-dropdown-wrapper">
+          <button class="dropdown-trigger" id="dropdown-btn">
+            <span id="dropdown-label">All Sources</span>
+            <span class="dropdown-arrow">▼</span>
+          </button>
 
-        <div class="dropdown-menu hidden" id="dropdown-menu">
-          <label class="dropdown-item toggle-all-item">
-            <input type="checkbox" id="cb-toggle-all" checked />
-            <strong>Toggle All / Select All</strong>
-          </label>
-          <div class="dropdown-divider"></div>
-          <div id="dropdown-options-list" class="dropdown-options-list">
-            <!-- Dynamic source checkboxes loaded here -->
+          <div class="dropdown-menu hidden" id="dropdown-menu">
+            <label class="dropdown-item toggle-all-item">
+              <input type="checkbox" id="cb-toggle-all" checked />
+              <strong>Toggle All / Select All</strong>
+            </label>
+            <div class="dropdown-divider"></div>
+            <div id="dropdown-options-list" class="dropdown-options-list">
+              <!-- Dynamic source checkboxes loaded here -->
+            </div>
           </div>
         </div>
       </div>
+
+      <!-- Bottom Controls Row: Counter (Left) & Deduplication (Right) -->
+        <div class="filter-row bottom-row">
+            <div class="showing-counter">
+            Showing <strong id="stat-showing-count">0</strong> of <strong id="stat-post-count">0</strong> captured posts
+            </div>
+
+            <label class="checkbox-label">
+            <input type="checkbox" id="cb-hide-text-duplicates" />
+            Hide Text Duplicates
+            </label>
+        </div>
     </div>
 
     <main class="feed-grid" id="feed-container">
