@@ -8,7 +8,19 @@ const pendingRequests = new Map();
 chrome.storage.session.get(['isInitialized']).then(async (result) => {
   if (!result.isInitialized) {
     await clearAllData();
-    console.log("[FB Filter] Extension reloaded or started. Database purged.");
+
+    // Reset diagnostic data in memory and chrome.storage.local
+    keywordDiscardCounts = {};
+    totalDiscardedCount = 0;
+    discardedPostIds = [];
+
+    await chrome.storage.local.set({
+      keywordDiscardCounts: {},
+      totalDiscardedCount: 0,
+      discardedPostIds: []
+    });
+
+    console.log("[FB Filter] Extension reloaded or started. Database and diagnostic stats purged.");
     await chrome.storage.session.set({ isInitialized: true });
   }
 });
@@ -19,18 +31,20 @@ let sniffGroupsOnly = false;
 let dynamicFilterConfig = { excludedKeywords: [] };
 let keywordDiscardCounts = {};
 let totalDiscardedCount = 0;
+let discardedPostIds = []; // Track IDs of posts already discarded by keyword
 const tabUrls = new Map();
 
 // 1. Load initial state on startup
 chrome.storage.local.get([
   'isSniffingEnabled', 'sniffGroupsOnly', 'excludedKeywords',
-  'keywordDiscardCounts', 'totalDiscardedCount'
+  'keywordDiscardCounts', 'totalDiscardedCount', 'discardedPostIds'
 ]).then((res) => {
   if (res.isSniffingEnabled !== undefined) isSniffingEnabled = res.isSniffingEnabled;
   if (res.sniffGroupsOnly !== undefined) sniffGroupsOnly = res.sniffGroupsOnly;
   if (res.excludedKeywords) dynamicFilterConfig.excludedKeywords = res.excludedKeywords;
   if (res.keywordDiscardCounts) keywordDiscardCounts = res.keywordDiscardCounts;
   if (res.totalDiscardedCount !== undefined) totalDiscardedCount = res.totalDiscardedCount;
+  if (res.discardedPostIds) discardedPostIds = res.discardedPostIds;
 });
 
 // 2. Listen for live updates
@@ -49,6 +63,7 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
     if (changes.excludedKeywords !== undefined) dynamicFilterConfig.excludedKeywords = changes.excludedKeywords.newValue;
     if (changes.keywordDiscardCounts !== undefined) keywordDiscardCounts = changes.keywordDiscardCounts.newValue;
     if (changes.totalDiscardedCount !== undefined) totalDiscardedCount = changes.totalDiscardedCount.newValue;
+    if (changes.discardedPostIds !== undefined) discardedPostIds = changes.discardedPostIds.newValue || [];
   }
 });
 
@@ -84,10 +99,15 @@ function passesInitialFilter(post, tabUrl) {
     if (matchedKeyword) {
       console.log(`[FB Filter] 🚫 Discarded Post ${post.postId} by ${post.author?.name}: Matched excluded keyword "${matchedKeyword}".`);
 
-      keywordDiscardCounts[matchedKeyword] = (keywordDiscardCounts[matchedKeyword] || 0) + 1;
-      totalDiscardedCount++;
+      // Only update counters if this post ID hasn't been discarded yet
+      if (!discardedPostIds.includes(post.postId)) {
+        keywordDiscardCounts[matchedKeyword] = (keywordDiscardCounts[matchedKeyword] || 0) + 1;
+        totalDiscardedCount++;
+        discardedPostIds.push(post.postId);
 
-      chrome.storage.local.set({ keywordDiscardCounts, totalDiscardedCount });
+        chrome.storage.local.set({ keywordDiscardCounts, totalDiscardedCount, discardedPostIds });
+      }
+
       return false;
     }
   }

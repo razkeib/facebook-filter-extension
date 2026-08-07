@@ -143,7 +143,8 @@ async function handlePurge(alsoClearStats) {
   if (alsoClearStats) {
     await chrome.storage.local.set({
       keywordDiscardCounts: {},
-      totalDiscardedCount: 0
+      totalDiscardedCount: 0,
+      discardedPostIds: []
     });
     console.log(`[FB Dashboard] Diagnostics reset.`);
   }
