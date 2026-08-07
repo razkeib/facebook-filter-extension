@@ -269,19 +269,19 @@ function filterAndRender() {
   }
 
   // 4. Sort Filtered Posts
-  filteredPosts.sort((a, b) => {
-    let valA, valB;
+    filteredPosts.sort((a, b) => {
+      let valA, valB;
 
-    if (currentSortField === 'timestamp') {
-      valA = a.timestamp ? a.timestamp * 1000 : 0;
-      valB = b.timestamp ? b.timestamp * 1000 : 0;
-    } else { // 'tableOrder'
-      valA = a._originalIndex ?? 0;
-      valB = b._originalIndex ?? 0;
-    }
+      if (currentSortField === 'timestamp') {
+        valA = a.timestamp ? a.timestamp * 1000 : 0;
+        valB = b.timestamp ? b.timestamp * 1000 : 0;
+      } else { // 'tableOrder' (Capture Time)
+        valA = a.capturedAt ?? 0;
+        valB = b.capturedAt ?? 0;
+      }
 
-    return isDescOrder ? valB - valA : valA - valB;
-  });
+      return isDescOrder ? valB - valA : valA - valB;
+    });
 
   renderFeed(filteredPosts);
 }
