@@ -79,3 +79,22 @@ fb-feed-filter-extension/
 | **Exact Phrase** | `"free shipping"` | Matches the exact phrase sequentially. |
 | **Field Targeting** | `author:"John Smith"` | Targets specific authors, groups, or text. Fields that can be targeted are `author`, `group`, `text` |
 | **Regular Expressions** | `/b[aeiou]y/i` | Evaluates raw regex patterns with flags. |
+
+---
+
+## Future Features
+
+### Bugs
+- Fix sort order for "capture time" (currently is based on post id in DB table which might have duplicate post IDs across different groups and doesn't really order by chronological order)
+- Change DB post storage: Currently the Posts table keys are the post_ids, but post IDs are different between groups (at least from what I've seen) and I believe there may be posts with similar post_ids in different groups.
+
+### Practical Features
+- Add pop-up menu option if to delete/purge all data when tab or browser closes
+- Save search queries with optional query name
+- Star/Archive posts
+- Auto-Scroller based on selected group IDs (make sure to redirect to group URL with header `sorting_setting=CHRONOLOGICAL`)
+- Monitor search queries + search queries name & priority (if a post matches a search query, you'll get notified with what name and priority it is so you'll know how relevant or critical it is to look into it)
+
+### Cosmetic Features
+- Stay on same post when more posts get appended (usually jumps when they get appended above current post in dashboard)
+- Add animation for posts that appear in dashboard

@@ -5,8 +5,6 @@ let attachedTabId = null;
 const pendingRequests = new Map();
 
 // --- RELOAD PURGE LOGIC ---
-// chrome.storage.session is cleared ONLY on extension reload or browser close.
-// It survives standard service worker sleep/wake cycles.
 chrome.storage.session.get(['isInitialized']).then(async (result) => {
   if (!result.isInitialized) {
     await clearAllData();
@@ -36,7 +34,8 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
       if (!isSniffingEnabled && attachedTabId) {
         chrome.debugger.detach({ tabId: attachedTabId });
         attachedTabId = null;
-        console.log("[FB Filter] Sniffing paused. Debugger detached.");
+        pendingRequests.clear();
+        console.log("[FB Filter] Extension disabled. Debugger detached and pending requests cleared.");
       }
     }
     if (changes.sniffGroupsOnly !== undefined) {
@@ -55,10 +54,8 @@ function isAllowedGroupUrl(url) {
     const parsed = new URL(url);
     if (!parsed.hostname.includes('facebook.com')) return false;
 
-    // Remove leading/trailing empty slashes from pathname
     const segments = parsed.pathname.split('/').filter(Boolean);
 
-    // Strictly enforce exactly 2 segments: ['groups', '<group_id_or_slug>']
     if (segments.length !== 2) return false;
     if (segments[0] !== 'groups') return false;
 
@@ -77,7 +74,6 @@ function isAllowedGroupUrl(url) {
 function passesInitialFilter(post, tabUrl) {
   if (!post || !isSniffingEnabled) return false;
 
-  // Enforce Group-Only constraint if enabled
   if (sniffGroupsOnly && !isAllowedGroupUrl(tabUrl)) {
     console.log(`[FB Filter] 🚫 Discarded Post ${post.postId} by ${post.author?.name}: Not an allowed group URL.`);
     return false;
@@ -121,9 +117,15 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // Clean up tab URL cache when tabs are closed
 chrome.tabs.onRemoved.addListener((tabId) => {
   tabUrls.delete(tabId);
+  if (tabId === attachedTabId) {
+    attachedTabId = null;
+  }
 });
 
 chrome.debugger.onEvent.addListener((debuggee, method, params) => {
+  // Completely ignore all events if sniffing/extension is disabled
+  if (!isSniffingEnabled) return;
+
   if (method === "Network.responseReceived") {
     const { requestId, response } = params;
     const url = response.url;
@@ -170,17 +172,15 @@ chrome.debugger.onEvent.addListener((debuggee, method, params) => {
             } else if (reqData.isImage) {
               const currentTabUrl = tabUrls.get(debuggee.tabId);
 
-              // 1. Enforce Group-Only constraint for images
               if (sniffGroupsOnly && !isAllowedGroupUrl(currentTabUrl)) {
                 console.debug(`[FB Filter] 🚫 Skipped Image (Not an allowed group URL):`, reqData.url);
-                return; // Skip caching image if outside an allowed group
+                return;
               }
 
-              // 2. Avoid re-caching if the image already exists in IndexedDB
               const existingMedia = await getMediaBlob(reqData.url);
               if (existingMedia) {
                 console.debug(`[FB Filter] ⏭️ Skipped Image (Already cached in DB):`, reqData.url);
-                return; // Already cached, skip saving again
+                return;
               }
 
               const base64Data = result.base64Encoded ? result.body : btoa(result.body);
@@ -197,7 +197,7 @@ chrome.debugger.onEvent.addListener((debuggee, method, params) => {
   }
 });
 
-// Legacy local storage purge check (optional fallback)
+// Legacy local storage purge check
 chrome.runtime.onStartup.addListener(async () => {
   const settings = await chrome.storage.local.get(['autoPurgeOnClose']);
   if (settings.autoPurgeOnClose) {
@@ -206,6 +206,9 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Do not process messages if disabled
+  if (!isSniffingEnabled) return;
+
   if (message.type === "PROCESS_SSR_SCRIPTS" && Array.isArray(message.payloads)) {
     const senderUrl = sender.tab ? sender.tab.url : null;
     (async () => {
