@@ -14,7 +14,9 @@
         <span>Media Blobs Cached: <strong id="stat-media-count">0</strong></span>
       </div>
       <div class="actions">
-        <button id="btn-purge" class="btn-danger">Clear All Data</button>
+        <!-- New Diagnostics Button -->
+        <button id="btn-diagnostics" class="btn-secondary" style="margin-right: 8px;">📊 Diagnostics</button>
+        <button id="btn-show-purge" class="btn-danger">Clear All Data</button>
       </div>
     </header>
 
@@ -112,6 +114,22 @@
   </div>
   <div id="drawer-backdrop" class="drawer-backdrop"></div>
 
-  <script type="module" src="dashboard.js"></script>
-</body>
-</html>
+  <!-- Custom Purge Modal -->
+    <div id="purge-modal" class="drawer-backdrop">
+      <div class="modal-card">
+        <h3>Clear Data</h3>
+        <p>Are you sure you want to clear all stored posts and media?</p>
+        <label class="checkbox-label" style="margin: 16px 0; display: block;">
+          <input type="checkbox" id="cb-clear-diagnostics" />
+          Also reset diagnostic statistics
+        </label>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;">
+          <button id="btn-cancel-purge" class="btn-secondary">Cancel</button>
+          <button id="btn-confirm-purge" class="btn-danger">Clear Everything</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="dashboard.js"></script>
+  </body>
+  </html>

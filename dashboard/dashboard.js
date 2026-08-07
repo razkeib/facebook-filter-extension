@@ -28,6 +28,30 @@ async function initDashboard() {
   document.getElementById('cb-hide-text-duplicates')?.addEventListener('change', filterAndRender);
   document.getElementById('btn-purge')?.addEventListener('click', handlePurge);
 
+  // Button Listeners
+    document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
+      window.location.href = 'diagnostics.html';
+    });
+
+    // Modal Logic
+    const purgeModal = document.getElementById('purge-modal');
+
+    document.getElementById('btn-show-purge')?.addEventListener('click', () => {
+      purgeModal.classList.add('open');
+    });
+
+    document.getElementById('btn-cancel-purge')?.addEventListener('click', () => {
+      purgeModal.classList.remove('open');
+      document.getElementById('cb-clear-diagnostics').checked = false; // Reset checkbox
+    });
+
+    document.getElementById('btn-confirm-purge')?.addEventListener('click', async () => {
+      const alsoClearStats = document.getElementById('cb-clear-diagnostics').checked;
+      await handlePurge(alsoClearStats);
+      purgeModal.classList.remove('open');
+      document.getElementById('cb-clear-diagnostics').checked = false;
+    });
+
   // Sort Event Listeners
   document.getElementById('sort-select')?.addEventListener('change', (e) => {
     currentSortField = e.target.value;
@@ -69,10 +93,20 @@ async function initDashboard() {
     filterAndRender();
   });
 
-  // Listen for Live Updates from Service Worker
+  // Listen for Live Updates from Service Worker (New Post Captures)
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "NEW_POST_SAVED" && message.payload) {
       handleLivePostUpdate(message.payload);
+    }
+  });
+
+  // Listen for Live Updates from Service Worker (Storage / Counter Updates)
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes.discardedKeywordCount !== undefined) {
+      const discardedStat = document.getElementById('stat-discarded-count');
+      if (discardedStat) {
+        discardedStat.textContent = changes.discardedKeywordCount.newValue || 0;
+      }
     }
   });
 
@@ -90,6 +124,35 @@ async function initDashboard() {
   btnCheatSheet?.addEventListener('click', () => toggleDrawer(true));
   btnCloseDrawer?.addEventListener('click', () => toggleDrawer(false));
   backdrop?.addEventListener('click', () => toggleDrawer(false));
+}
+
+async function renderStats() {
+  const postStat = document.getElementById('stat-post-count');
+  const mediaStat = document.getElementById('stat-media-count');
+
+  if (postStat) postStat.textContent = allPosts.length;
+  if (mediaStat) {
+    const count = await getMediaCount();
+    mediaStat.textContent = count;
+  }
+}
+
+async function handlePurge(alsoClearStats) {
+  await clearAllData();
+
+  if (alsoClearStats) {
+    await chrome.storage.local.set({
+      keywordDiscardCounts: {},
+      totalDiscardedCount: 0
+    });
+    console.log(`[FB Dashboard] Diagnostics reset.`);
+  }
+
+  allPosts = [];
+  renderStats();
+  populateGroupDropdown();
+  await renderFeed([]);
+  console.log(`[FB Dashboard] 🗑️ Cleared all stored posts and media`);
 }
 
 async function handleLivePostUpdate(newPost) {
@@ -114,17 +177,6 @@ async function handleLivePostUpdate(newPost) {
   }
 
   filterAndRender();
-}
-
-async function renderStats() {
-  const postStat = document.getElementById('stat-post-count');
-  const mediaStat = document.getElementById('stat-media-count');
-
-  if (postStat) postStat.textContent = allPosts.length;
-  if (mediaStat) {
-    const count = await getMediaCount();
-    mediaStat.textContent = count;
-  }
 }
 
 function populateGroupDropdown() {
@@ -329,17 +381,6 @@ async function renderFeed(posts) {
         }
       }
     }
-  }
-}
-
-async function handlePurge() {
-  if (confirm("Are you sure you want to clear all stored posts and media?")) {
-    await clearAllData();
-    allPosts = [];
-    renderStats();
-    populateGroupDropdown();
-    await renderFeed([]);
-    console.log(`[FB Dashboard] 🗑️ Cleared all stored posts and media`);
   }
 }
 

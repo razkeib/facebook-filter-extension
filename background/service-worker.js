@@ -17,16 +17,23 @@ chrome.storage.session.get(['isInitialized']).then(async (result) => {
 let isSniffingEnabled = true;
 let sniffGroupsOnly = false;
 let dynamicFilterConfig = { excludedKeywords: [] };
-const tabUrls = new Map(); // Tracks current tab URLs for sniffing validation
+let keywordDiscardCounts = {};
+let totalDiscardedCount = 0;
+const tabUrls = new Map();
 
 // 1. Load initial state on startup
-chrome.storage.local.get(['isSniffingEnabled', 'sniffGroupsOnly', 'excludedKeywords']).then((res) => {
+chrome.storage.local.get([
+  'isSniffingEnabled', 'sniffGroupsOnly', 'excludedKeywords',
+  'keywordDiscardCounts', 'totalDiscardedCount'
+]).then((res) => {
   if (res.isSniffingEnabled !== undefined) isSniffingEnabled = res.isSniffingEnabled;
   if (res.sniffGroupsOnly !== undefined) sniffGroupsOnly = res.sniffGroupsOnly;
   if (res.excludedKeywords) dynamicFilterConfig.excludedKeywords = res.excludedKeywords;
+  if (res.keywordDiscardCounts) keywordDiscardCounts = res.keywordDiscardCounts;
+  if (res.totalDiscardedCount !== undefined) totalDiscardedCount = res.totalDiscardedCount;
 });
 
-// 2. Listen for live updates from Popup
+// 2. Listen for live updates
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local') {
     if (changes.isSniffingEnabled !== undefined) {
@@ -38,12 +45,10 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
         console.log("[FB Filter] Extension disabled. Debugger detached and pending requests cleared.");
       }
     }
-    if (changes.sniffGroupsOnly !== undefined) {
-      sniffGroupsOnly = changes.sniffGroupsOnly.newValue;
-    }
-    if (changes.excludedKeywords !== undefined) {
-      dynamicFilterConfig.excludedKeywords = changes.excludedKeywords.newValue;
-    }
+    if (changes.sniffGroupsOnly !== undefined) sniffGroupsOnly = changes.sniffGroupsOnly.newValue;
+    if (changes.excludedKeywords !== undefined) dynamicFilterConfig.excludedKeywords = changes.excludedKeywords.newValue;
+    if (changes.keywordDiscardCounts !== undefined) keywordDiscardCounts = changes.keywordDiscardCounts.newValue;
+    if (changes.totalDiscardedCount !== undefined) totalDiscardedCount = changes.totalDiscardedCount.newValue;
   }
 });
 
@@ -53,21 +58,12 @@ function isAllowedGroupUrl(url) {
   try {
     const parsed = new URL(url);
     if (!parsed.hostname.includes('facebook.com')) return false;
-
     const segments = parsed.pathname.split('/').filter(Boolean);
-
-    if (segments.length !== 2) return false;
-    if (segments[0] !== 'groups') return false;
-
+    if (segments.length !== 2 || segments[0] !== 'groups') return false;
     const groupIdentifier = segments[1].toLowerCase();
-    if (groupIdentifier === 'feed' || groupIdentifier === 'discover') {
-      return false;
-    }
-
+    if (groupIdentifier === 'feed' || groupIdentifier === 'discover') return false;
     return true;
-  } catch (e) {
-    return false;
-  }
+  } catch (e) { return false; }
 }
 
 // 4. Pre-Ingestion Filter
@@ -87,6 +83,11 @@ function passesInitialFilter(post, tabUrl) {
 
     if (matchedKeyword) {
       console.log(`[FB Filter] 🚫 Discarded Post ${post.postId} by ${post.author?.name}: Matched excluded keyword "${matchedKeyword}".`);
+
+      keywordDiscardCounts[matchedKeyword] = (keywordDiscardCounts[matchedKeyword] || 0) + 1;
+      totalDiscardedCount++;
+
+      chrome.storage.local.set({ keywordDiscardCounts, totalDiscardedCount });
       return false;
     }
   }
@@ -103,44 +104,31 @@ function attachDebugger(tabId) {
   });
 }
 
-// Track URL updates on Facebook tabs
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (tab.url) {
-    tabUrls.set(tabId, tab.url);
-  }
-
+  if (tab.url) tabUrls.set(tabId, tab.url);
   if (isSniffingEnabled && changeInfo.status === 'complete' && tab.url && tab.url.includes('facebook.com')) {
     attachDebugger(tabId);
   }
 });
 
-// Clean up tab URL cache when tabs are closed
 chrome.tabs.onRemoved.addListener((tabId) => {
   tabUrls.delete(tabId);
-  if (tabId === attachedTabId) {
-    attachedTabId = null;
-  }
+  if (tabId === attachedTabId) attachedTabId = null;
 });
 
 chrome.debugger.onEvent.addListener((debuggee, method, params) => {
-  // Completely ignore all events if sniffing/extension is disabled
   if (!isSniffingEnabled) return;
 
   if (method === "Network.responseReceived") {
     const { requestId, response } = params;
     const url = response.url;
-
-    const isGraphQL = url.includes('graphql');
-    const isImage = url.includes('scontent') && url.includes('.fbcdn.net');
-
-    if (isGraphQL || isImage) {
-      pendingRequests.set(requestId, { url, mimeType: response.mimeType, isGraphQL, isImage });
+    if (url.includes('graphql') || (url.includes('scontent') && url.includes('.fbcdn.net'))) {
+      pendingRequests.set(requestId, { url, mimeType: response.mimeType, isGraphQL: url.includes('graphql'), isImage: url.includes('scontent') });
     }
   }
 
   if (method === "Network.loadingFinished") {
     const { requestId } = params;
-
     if (pendingRequests.has(requestId)) {
       const reqData = pendingRequests.get(requestId);
       pendingRequests.delete(requestId);
@@ -151,7 +139,6 @@ chrome.debugger.onEvent.addListener((debuggee, method, params) => {
         { requestId },
         async (result) => {
           if (chrome.runtime.lastError || !result || !result.body) return;
-
           try {
             if (reqData.isGraphQL) {
               const currentTabUrl = tabUrls.get(debuggee.tabId);
@@ -171,42 +158,26 @@ chrome.debugger.onEvent.addListener((debuggee, method, params) => {
               }
             } else if (reqData.isImage) {
               const currentTabUrl = tabUrls.get(debuggee.tabId);
-
-              if (sniffGroupsOnly && !isAllowedGroupUrl(currentTabUrl)) {
-                console.debug(`[FB Filter] 🚫 Skipped Image (Not an allowed group URL):`, reqData.url);
-                return;
-              }
-
+              if (sniffGroupsOnly && !isAllowedGroupUrl(currentTabUrl)) return;
               const existingMedia = await getMediaBlob(reqData.url);
-              if (existingMedia) {
-                console.debug(`[FB Filter] ⏭️ Skipped Image (Already cached in DB):`, reqData.url);
-                return;
-              }
-
+              if (existingMedia) return;
               const base64Data = result.base64Encoded ? result.body : btoa(result.body);
-              const mimeType = reqData.mimeType || 'image/jpeg';
-              await saveMediaBlob(reqData.url, base64Data, mimeType);
+              await saveMediaBlob(reqData.url, base64Data, reqData.mimeType || 'image/jpeg');
               console.log(`[FB Filter] 🖼️ Cached New Image`);
             }
-          } catch (e) {
-            // Ignore stream processing errors
-          }
+          } catch (e) {}
         }
       );
     }
   }
 });
 
-// Legacy local storage purge check
 chrome.runtime.onStartup.addListener(async () => {
   const settings = await chrome.storage.local.get(['autoPurgeOnClose']);
-  if (settings.autoPurgeOnClose) {
-    await clearAllData();
-  }
+  if (settings.autoPurgeOnClose) await clearAllData();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Do not process messages if disabled
   if (!isSniffingEnabled) return;
 
   if (message.type === "PROCESS_SSR_SCRIPTS" && Array.isArray(message.payloads)) {

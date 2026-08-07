@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Filter Diagnostics</title>
+  <link rel="stylesheet" href="dashboard.css">
+  <link rel="stylesheet" href="diagnostics.css">
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <button id="btn-back" class="btn-secondary">← Back to Feed</button>
+        <h1>Filter Diagnostics</h1>
+      </div>
+      <div class="actions">
+        <button id="btn-reset-stats" class="btn-danger">Reset Statistics</button>
+      </div>
+    </header>
+
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-title">Posts Captured</div>
+        <div class="metric-value" id="stat-captured">0</div>
+      </div>
+      <div class="metric-card highlight">
+        <div class="metric-title">Total Discarded</div>
+        <div class="metric-value" id="stat-discarded">0</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">Filter Efficiency</div>
+        <div class="metric-value" id="stat-efficiency">0%</div>
+        <div class="metric-subtext">of processed posts filtered out</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-title">Top Blocked Term</div>
+        <div class="metric-value top-term" id="stat-top-term">None</div>
+      </div>
+    </div>
+
+    <main class="chart-container">
+      <h2>Discarded Keywords Breakdown</h2>
+      <div id="chart-area" class="bar-chart">
+        <!-- Bars injected here via JS -->
+      </div>
+    </main>
+  </div>
+  <script type="module" src="diagnostics.js"></script>
+</body>
+</html>
