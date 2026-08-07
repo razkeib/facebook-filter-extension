@@ -463,3 +463,87 @@ body {
   font-size: 0.95rem;
   line-height: 1.4;
 }
+
+/* Bottom Controls Row Styling */
+.filter-row.bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color, #e5e7eb);
+}
+
+.showing-counter {
+  font-size: 0.875rem;
+  white-space: nowrap;
+  color: var(--text-secondary, #6b7280);
+}
+
+.sort-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-toggles-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.825rem;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 16px;
+  background-color: var(--bg-secondary, #f3f4f6);
+  border: 1px solid var(--border-color, #d1d5db);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+}
+
+.toggle-pill:hover {
+  background-color: var(--bg-hover, #e5e7eb);
+}
+
+.toggle-pill input[type="checkbox"] {
+  cursor: pointer;
+  margin: 0;
+}
+
+/* Seen Post Styling */
+.post-card.is-seen {
+  opacity: 0.65;
+  filter: grayscale(15%);
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.post-card.is-seen:hover {
+  opacity: 1;
+  filter: grayscale(0%);
+}
+
+/* Archived Post Styling */
+.post-card.is-archived {
+  border-left: 4px solid #f39c12;
+}
+
+.badge-archived {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #d35400;
+  background-color: #fdebd0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}

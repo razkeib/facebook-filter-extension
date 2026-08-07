@@ -49,27 +49,44 @@
       </div>
 
       <!-- Bottom Controls Row: Counter (Left), Sorting (Middle), Deduplication (Right) -->
-        <div class="filter-row bottom-row">
-            <div class="showing-counter">
-            Showing <strong id="stat-showing-count">0</strong> of <strong id="stat-post-count">0</strong> captured posts
-            </div>
-
-            <div class="sort-controls">
-            <label for="sort-select">Sort by:</label>
-            <select id="sort-select" class="sort-dropdown">
-                <option value="tableOrder">Capture Time</option>
-                <option value="timestamp">General Post Time</option>
-            </select>
-            <button id="btn-sort-dir" class="btn-secondary btn-sort" title="Toggle Sort Direction">
-                <span id="sort-dir-icon">⬇️</span> <span id="sort-dir-text">Newest First</span>
-            </button>
-            </div>
-
-            <label class="checkbox-label">
-            <input type="checkbox" id="cb-hide-text-duplicates" />
-            Hide Text Duplicates
-            </label>
+      <div class="filter-row bottom-row">
+        <div class="showing-counter">
+          Showing <strong id="stat-showing-count">0</strong> of <strong id="stat-post-count">0</strong> posts
         </div>
+
+        <div class="sort-controls-group">
+          <label for="sort-select">Sort by:</label>
+          <select id="sort-select" class="sort-dropdown">
+            <option value="timestamp">General Post Time</option>
+            <option value="tableOrder">Capture Time</option>
+          </select>
+          <button id="btn-sort-dir" class="btn-secondary btn-sort" title="Toggle Sort Direction">
+            <span id="sort-dir-icon">⬇️</span> <span id="sort-dir-text">Newest First</span>
+          </button>
+        </div>
+
+        <div class="filter-toggles-group">
+          <label class="toggle-pill">
+            <input type="checkbox" id="cb-starred-only" />
+            <span>⭐ Starred Only</span>
+          </label>
+
+          <label class="toggle-pill">
+            <input type="checkbox" id="cb-hide-seen" />
+            <span>👁️ Hide Seen</span>
+          </label>
+
+          <label class="toggle-pill">
+            <input type="checkbox" id="cb-show-archived" />
+            <span>📦 Show Archived</span>
+          </label>
+
+          <label class="toggle-pill">
+            <input type="checkbox" id="cb-hide-text-duplicates" />
+            <span>Hide Text Duplicates</span>
+          </label>
+        </div>
+      </div>
     </div>
 
     <main class="feed-grid" id="feed-container">

@@ -1,8 +1,10 @@
-import { getAllPosts, getMediaBlob, getMediaCount, clearAllData } from '../lib/db.js';
+import { getAllPosts, getMediaBlob, getMediaCount, clearAllData, updatePostFlags } from '../lib/db.js';
 import { executeSearch } from '../lib/search-engine.js';
 
 let allPosts = [];
 const imageObjectUrls = new Set();
+let seenObserver = null;
+const visibleTimers = new Map();
 
 // Sorting State
 let currentSortField = 'timestamp'; // 'timestamp' | 'tableOrder'
@@ -12,21 +14,22 @@ async function initDashboard() {
   console.log("[FB Dashboard] Initializing...");
 
   try {
-    const rawPosts = await getAllPosts();
-    // Index posts by their original table position
-    allPosts = rawPosts.map((post, index) => ({ ...post, _originalIndex: index }));
+      allPosts = await getAllPosts(); // Store raw posts directly
 
-    renderStats();
-    populateGroupDropdown();
-    await filterAndRender();
-  } catch (err) {
-    console.error("[FB Dashboard] Error loading posts from DB:", err?.message || err);
-  }
+      renderStats();
+      populateGroupDropdown();
+      setupIntersectionObserver();
+      await filterAndRender();
+    } catch (err) {
+      console.error("[FB Dashboard] Error loading posts from DB:", err?.message || err);
+    }
 
   // Setup Event Listeners
   document.getElementById('search-input')?.addEventListener('input', filterAndRender);
   document.getElementById('cb-hide-text-duplicates')?.addEventListener('change', filterAndRender);
-  document.getElementById('btn-purge')?.addEventListener('click', handlePurge);
+  document.getElementById('cb-starred-only')?.addEventListener('change', filterAndRender);
+  document.getElementById('cb-hide-seen')?.addEventListener('change', filterAndRender);
+  document.getElementById('cb-show-archived')?.addEventListener('change', filterAndRender);
 
   // Button Listeners
     document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
@@ -126,6 +129,42 @@ async function initDashboard() {
   backdrop?.addEventListener('click', () => toggleDrawer(false));
 }
 
+// Setup IntersectionObserver for 1.5 second visibility detection
+function setupIntersectionObserver() {
+  if (seenObserver) seenObserver.disconnect();
+
+  seenObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const postId = entry.target.dataset.id;
+      if (!postId) return;
+
+      if (entry.isIntersecting) {
+        // Start 1.5s timer when post enters viewport at 50%+ visibility
+        if (!visibleTimers.has(postId)) {
+          const timer = setTimeout(async () => {
+            const post = allPosts.find(p => p.postId === postId);
+            if (post && !post.isSeen) {
+              post.isSeen = true;
+              await updatePostFlags(postId, { isSeen: true });
+              const card = document.querySelector(`.post-card[data-id="${postId}"]`);
+              if (card) card.classList.add('is-seen');
+            }
+            visibleTimers.delete(postId);
+          }, 1500);
+
+          visibleTimers.set(postId, timer);
+        }
+      } else {
+        // Cancel timer if user scrolls past before 1.5s
+        if (visibleTimers.has(postId)) {
+          clearTimeout(visibleTimers.get(postId));
+          visibleTimers.delete(postId);
+        }
+      }
+    });
+  }, { threshold: 0.5 });
+}
+
 async function renderStats() {
   const postStat = document.getElementById('stat-post-count');
   const mediaStat = document.getElementById('stat-media-count');
@@ -160,12 +199,9 @@ async function handleLivePostUpdate(newPost) {
   const existingIndex = allPosts.findIndex(p => p.postId === newPost.postId);
 
   if (existingIndex > -1) {
-    // Retain existing _originalIndex when updating
-    allPosts[existingIndex] = { ...newPost, _originalIndex: allPosts[existingIndex]._originalIndex };
+    allPosts[existingIndex] = { ...newPost };
   } else {
-    // Assign new highest index
-    const nextIndex = allPosts.length > 0 ? Math.max(...allPosts.map(p => p._originalIndex ?? 0)) + 1 : 0;
-    allPosts.push({ ...newPost, _originalIndex: nextIndex });
+    allPosts.push(newPost);
   }
 
   renderStats();
@@ -245,19 +281,35 @@ function updateDropdownLabel() {
 function filterAndRender() {
   const query = document.getElementById('search-input')?.value || '';
   const hideDuplicates = document.getElementById('cb-hide-text-duplicates')?.checked || false;
+  const starredOnly = document.getElementById('cb-starred-only')?.checked || false;
+  const hideSeen = document.getElementById('cb-hide-seen')?.checked || false;
+  const showArchived = document.getElementById('cb-show-archived')?.checked || false;
 
   const checkedBoxes = document.querySelectorAll('.group-cb:checked');
   const selectedGroups = new Set(Array.from(checkedBoxes).map(cb => cb.value));
 
-  // 1. Filter by Group Checkboxes
+  // 1. Group Filter
   let filteredPosts = allPosts.filter(post => {
     return post.group?.name ? selectedGroups.has(post.group.name) : false;
   });
 
-  // 2. Search Engine Filter
+  // 2. Archive Filter
+  filteredPosts = filteredPosts.filter(post => showArchived ? post.isArchived : !post.isArchived);
+
+  // 3. Starred Filter
+  if (starredOnly) {
+    filteredPosts = filteredPosts.filter(post => post.isStarred);
+  }
+
+  // 4. Hide Seen Filter (Starred posts bypass hide seen)
+  if (hideSeen) {
+    filteredPosts = filteredPosts.filter(post => !post.isSeen || post.isStarred);
+  }
+
+  // 5. Search Engine Filter
   filteredPosts = executeSearch(query, filteredPosts);
 
-  // 3. Exact Text Deduplication Filter
+  // 6. Text Deduplication Filter
   if (hideDuplicates) {
     const seenTexts = new Set();
     filteredPosts = filteredPosts.filter(post => {
@@ -269,27 +321,30 @@ function filterAndRender() {
     });
   }
 
-  // 4. Sort Filtered Posts
-    filteredPosts.sort((a, b) => {
-      let valA, valB;
-
-      if (currentSortField === 'timestamp') {
-        valA = a.timestamp ? a.timestamp * 1000 : 0;
-        valB = b.timestamp ? b.timestamp * 1000 : 0;
-      } else { // 'tableOrder' (Capture Time)
-        valA = a.capturedAt ?? 0;
-        valB = b.capturedAt ?? 0;
-      }
-
-      return isDescOrder ? valB - valA : valA - valB;
-    });
+  // 7. Sorting
+  filteredPosts.sort((a, b) => {
+    let valA, valB;
+    if (currentSortField === 'timestamp') {
+      valA = a.timestamp ? a.timestamp * 1000 : 0;
+      valB = b.timestamp ? b.timestamp * 1000 : 0;
+    } else {
+      valA = a.capturedAt ?? 0;
+      valB = b.capturedAt ?? 0;
+    }
+    return isDescOrder ? valB - valA : valA - valB;
+  });
 
   renderFeed(filteredPosts);
 }
 
 function createPostCard(post) {
   const card = document.createElement('article');
-  card.className = 'post-card';
+
+  // Attach state classes
+  const classes = ['post-card'];
+  if (post.isSeen) classes.push('is-seen');
+  if (post.isArchived) classes.push('is-archived');
+  card.className = classes.join(' ');
   card.dataset.id = post.postId;
 
   const avatarHtml = post.author?.profilePic
@@ -312,6 +367,10 @@ function createPostCard(post) {
     ? `<a href="${post.permalinkUrl}" target="_blank" class="post-meta-link">${post.formattedDate || 'View Post'}</a>`
     : `<span class="post-meta">${post.formattedDate || ''}</span>`;
 
+  const archivedBadgeHtml = post.isArchived
+    ? `<span class="badge-archived" title="This post is archived">📦 Archived</span>`
+    : '';
+
   let imagesContainerHtml = '';
   if (post.images && post.images.length > 0) {
     imagesContainerHtml = `<div class="post-images"></div>`;
@@ -322,14 +381,43 @@ function createPostCard(post) {
       <div class="post-header-left">
         ${avatarHtml}
         <div class="post-header-info">
-          <div class="post-author-line">${authorLink}${groupText}</div>
+          <div class="post-author-line">${authorLink}${groupText} ${archivedBadgeHtml}</div>
           <div class="post-meta">${timeHtml}</div>
         </div>
+      </div>
+      <div class="post-card-actions">
+        <button class="btn-icon btn-star ${post.isStarred ? 'active' : ''}" title="${post.isStarred ? 'Unstar post' : 'Star post'}">
+          ${post.isStarred ? '⭐' : '☆'}
+        </button>
+        <button class="btn-icon btn-archive ${post.isArchived ? 'active' : ''}" title="${post.isArchived ? 'Remove from archive' : 'Archive post'}">
+          ${post.isArchived ? '📥' : '📦'}
+        </button>
       </div>
     </div>
     <div class="post-content" dir="auto">${escapeHtml(post.text || '')}</div>
     ${imagesContainerHtml}
   `;
+
+  // Action listeners with dynamic title updates
+  const btnStar = card.querySelector('.btn-star');
+  btnStar?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    post.isStarred = !post.isStarred;
+    btnStar.innerHTML = post.isStarred ? '⭐' : '☆';
+    btnStar.title = post.isStarred ? 'Unstar post' : 'Star post';
+    btnStar.classList.toggle('active', post.isStarred);
+    await updatePostFlags(post.postId, { isStarred: post.isStarred });
+  });
+
+  const btnArchive = card.querySelector('.btn-archive');
+  btnArchive?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    post.isArchived = !post.isArchived;
+    btnArchive.title = post.isArchived ? 'Remove from archive' : 'Archive post';
+    await updatePostFlags(post.postId, { isArchived: post.isArchived });
+    filterAndRender(); // Refresh feed immediately on toggle
+  });
+
   return card;
 }
 
@@ -338,15 +426,19 @@ async function renderFeed(posts) {
   const showingStat = document.getElementById('stat-showing-count');
 
   if (showingStat) showingStat.textContent = posts ? posts.length : 0;
-
   if (!container) return;
+
+  // Disconnect observer before rebuilding DOM
+  if (seenObserver) seenObserver.disconnect();
+  visibleTimers.forEach(timer => clearTimeout(timer));
+  visibleTimers.clear();
 
   container.innerHTML = '';
   imageObjectUrls.forEach(url => URL.revokeObjectURL(url));
   imageObjectUrls.clear();
 
   if (!posts || posts.length === 0) {
-    container.innerHTML = `<div class="empty-state">No posts captured yet. Scroll Facebook to start collecting!</div>`;
+    container.innerHTML = `<div class="empty-state">No posts match your filters.</div>`;
     return;
   }
 
@@ -354,6 +446,10 @@ async function renderFeed(posts) {
     const card = createPostCard(post);
     container.appendChild(card);
 
+    // Observe card for viewport entry
+    if (seenObserver) seenObserver.observe(card);
+
+    // Render post images...
     if (post.images && post.images.length > 0) {
       const imgWrapper = card.querySelector('.post-images');
       if (imgWrapper) {
