@@ -524,151 +524,179 @@ function filterAndRender() {
     renderFeed(finalFeed, matchedHighlightTerms);
   }
 
-function createPostCard(post, activeTerms = []) {
-  const card = document.createElement('article');
+  function createPostCard(post, activeTerms = []) {
+    const card = document.createElement('article');
 
-  const classes = ['post-card'];
-  if (post.isSeen) classes.push('is-seen');
-  if (post.isArchived) classes.push('is-archived');
+    const classes = ['post-card'];
+    if (post.isSeen) classes.push('is-seen');
+    if (post.isArchived) classes.push('is-archived');
 
-  card.className = classes.join(' ');
-  // Apply query color coding if it was caught by a priority query
-  if (post.queryColor) {
-    card.style.borderLeft = `6px solid ${post.queryColor}`;
-  } else {
-    card.style.borderLeft = `6px solid transparent`; // Reset
-  }
+    card.className = classes.join(' ');
+    // Apply query color coding if it was caught by a priority query
+    if (post.queryColor) {
+      card.style.borderLeft = `6px solid ${post.queryColor}`;
+    } else {
+      card.style.borderLeft = `6px solid transparent`; // Reset
+    }
 
-  card.dataset.id = post.postId;
-  card.dataset.memberIds = post.memberPosts ? post.memberPosts.map(p => p.postId).join(',') : post.postId;
+    card.dataset.id = post.postId;
+    card.dataset.memberIds = post.memberPosts ? post.memberPosts.map(p => p.postId).join(',') : post.postId;
 
-  const avatarHtml = post.author?.profilePic
-    ? `<img src="${post.author.profilePic}" class="author-avatar" alt="Avatar" referrerpolicy="no-referrer" />`
-    : `<div class="author-avatar placeholder"></div>`;
+    const avatarHtml = post.author?.profilePic
+      ? `<img src="${post.author.profilePic}" class="author-avatar" alt="Avatar" referrerpolicy="no-referrer" />`
+      : `<div class="author-avatar placeholder"></div>`;
 
-  const authorLink = post.author?.url
-    ? `<a href="${post.author.url}" target="_blank" class="post-author">${escapeHtml(post.author.name || "Unknown Author")}</a>`
-    : `<span class="post-author">${escapeHtml(post.author?.name || "Unknown Author")}</span>`;
+    const authorLink = post.author?.url
+      ? `<a href="${post.author.url}" target="_blank" class="post-author">${escapeHtml(post.author.name || "Unknown Author")}</a>`
+      : `<span class="post-author">${escapeHtml(post.author?.name || "Unknown Author")}</span>`;
 
-  const groupLinksHtml = (post.groups || [post.group]).filter(g => g && g.name && g.name !== "Facebook Feed").map(g => {
-    return g.url
-      ? `<a href="${g.url}" target="_blank" class="post-group">${escapeHtml(g.name)}</a>`
-      : escapeHtml(g.name);
-  }).join(' • ');
+    // 1. MODIFIED: Redirect group hyperlinks to the specific post permalink if available
+    const groupLinksHtml = (post.groups || [post.group]).filter(g => g && g.name && g.name !== "Facebook Feed").map(g => {
+      const targetUrl = post.permalinkUrl || g.url; // Fallback to group URL if permalink is missing
+      return targetUrl
+        ? `<a href="${targetUrl}" target="_blank" class="post-group">${escapeHtml(g.name)}</a>`
+        : escapeHtml(g.name);
+    }).join(' • ');
 
-  const groupText = groupLinksHtml.length > 0
-    ? ` <span style="color: var(--text-secondary); font-weight: normal;">in</span> ${groupLinksHtml}`
-    : '';
+    const groupText = groupLinksHtml.length > 0
+      ? ` <span style="color: var(--text-secondary); font-weight: normal;">in</span> ${groupLinksHtml}`
+      : '';
 
-  const timeHtml = post.permalinkUrl
-    ? `<a href="${post.permalinkUrl}" target="_blank" class="post-meta-link">${post.formattedDate || 'View Post'}</a>`
-    : `<span class="post-meta">${post.formattedDate || ''}</span>`;
+    const timeHtml = post.permalinkUrl
+      ? `<a href="${post.permalinkUrl}" target="_blank" class="post-meta-link">${post.formattedDate || 'View Post'}</a>`
+      : `<span class="post-meta">${post.formattedDate || ''}</span>`;
 
-  const archivedBadgeHtml = post.isArchived
-    ? `<span class="badge-archived" title="This post is archived">📦 Archived</span>`
-    : '';
+    const archivedBadgeHtml = post.isArchived
+      ? `<span class="badge-archived" title="This post is archived">📦 Archived</span>`
+      : '';
 
-  // Construct Media Switcher UI if media exists
-  let imagesContainerHtml = '';
-  if (post.mediaVariants && post.mediaVariants.length > 0) {
-    const hasMultipleVariants = post.mediaVariants.length > 1;
-    const switcherHtml = hasMultipleVariants ? `
-      <div class="media-switcher">
-        <button class="btn-media-nav btn-media-prev" title="Previous media variant">◀</button>
-        <span class="media-variant-info">Media 1 of ${post.mediaVariants.length} (${escapeHtml(post.mediaVariants[0].sourceGroup)})</span>
-        <button class="btn-media-nav btn-media-next" title="Next media variant">▶</button>
-      </div>
-    ` : '';
+    // Construct Media Switcher UI if media exists
+    let imagesContainerHtml = '';
+    if (post.mediaVariants && post.mediaVariants.length > 0) {
+      const hasMultipleVariants = post.mediaVariants.length > 1;
+      const switcherHtml = hasMultipleVariants ? `
+        <div class="media-switcher">
+          <button class="btn-media-nav btn-media-prev" title="Previous media variant">◀</button>
+          <span class="media-variant-info">Media 1 of ${post.mediaVariants.length} (${escapeHtml(post.mediaVariants[0].sourceGroup)})</span>
+          <button class="btn-media-nav btn-media-next" title="Next media variant">▶</button>
+        </div>
+      ` : '';
 
-    imagesContainerHtml = `
-      <div class="post-media-section">
-        ${switcherHtml}
-        <div class="post-images"></div>
-      </div>
-    `;
-  }
+      imagesContainerHtml = `
+        <div class="post-media-section">
+          ${switcherHtml}
+          <div class="post-images"></div>
+        </div>
+      `;
+    }
 
-  card.innerHTML = `
-    <div class="post-header">
-      <div class="post-header-left">
-        ${avatarHtml}
-        <div class="post-header-info">
-          <div class="post-author-line">${authorLink}${groupText} ${archivedBadgeHtml}</div>
-          <div class="post-meta">${timeHtml}</div>
+    card.innerHTML = `
+      <div class="post-header">
+        <div class="post-header-left">
+          ${avatarHtml}
+          <div class="post-header-info">
+            <div class="post-author-line">${authorLink}${groupText} ${archivedBadgeHtml}</div>
+            <div class="post-meta">${timeHtml}</div>
+          </div>
+        </div>
+        <div class="post-card-actions">
+          <button class="btn-icon btn-star ${post.isStarred ? 'active' : ''}" title="${post.isStarred ? 'Unstar post' : 'Star post'}">
+            ${post.isStarred ? '⭐' : '☆'}
+          </button>
+          <button class="btn-icon btn-archive ${post.isArchived ? 'active' : ''}" title="${post.isArchived ? 'Remove from archive' : 'Archive post'}">
+            ${post.isArchived ? '📥' : '📦'}
+          </button>
         </div>
       </div>
-      <div class="post-card-actions">
-        <button class="btn-icon btn-star ${post.isStarred ? 'active' : ''}" title="${post.isStarred ? 'Unstar post' : 'Star post'}">
-          ${post.isStarred ? '⭐' : '☆'}
-        </button>
-        <button class="btn-icon btn-archive ${post.isArchived ? 'active' : ''}" title="${post.isArchived ? 'Remove from archive' : 'Archive post'}">
-          ${post.isArchived ? '📥' : '📦'}
-        </button>
-      </div>
-    </div>
-    <div class="post-content" dir="auto">${highlightTextSafe(post.text || '', activeTerms)}</div>
-    ${imagesContainerHtml}
-  `;
+      <div class="post-content" dir="auto">${highlightTextSafe(post.text || '', activeTerms)}</div>
+      ${imagesContainerHtml}
+    `;
 
-  // Attach Media Navigation Event Listeners
-  if (post.mediaVariants && post.mediaVariants.length > 1) {
-    let activeIndex = 0;
-    const prevBtn = card.querySelector('.btn-media-prev');
-    const nextBtn = card.querySelector('.btn-media-next');
-    const infoSpan = card.querySelector('.media-variant-info');
-    const imgWrapper = card.querySelector('.post-images');
+    // Attach Media Navigation Event Listeners
+    if (post.mediaVariants && post.mediaVariants.length > 1) {
+      let activeIndex = 0;
+      const prevBtn = card.querySelector('.btn-media-prev');
+      const nextBtn = card.querySelector('.btn-media-next');
+      const infoSpan = card.querySelector('.media-variant-info');
+      const imgWrapper = card.querySelector('.post-images');
 
-    const switchVariant = async (newIdx) => {
-      activeIndex = newIdx;
-      if (infoSpan) {
-        infoSpan.textContent = `Media ${activeIndex + 1} of ${post.mediaVariants.length} (${post.mediaVariants[activeIndex].sourceGroup})`;
+      const switchVariant = async (newIdx) => {
+        activeIndex = newIdx;
+        if (infoSpan) {
+          infoSpan.textContent = `Media ${activeIndex + 1} of ${post.mediaVariants.length} (${post.mediaVariants[activeIndex].sourceGroup})`;
+        }
+        await renderImageGrid(imgWrapper, post.mediaVariants[activeIndex].images);
+      };
+
+      prevBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const newIdx = (activeIndex - 1 + post.mediaVariants.length) % post.mediaVariants.length;
+        switchVariant(newIdx);
+      });
+
+      nextBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const newIdx = (activeIndex + 1) % post.mediaVariants.length;
+        switchVariant(newIdx);
+      });
+    }
+
+    // Batch Star Updates
+    const btnStar = card.querySelector('.btn-star');
+    btnStar?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      post.isStarred = !post.isStarred;
+      btnStar.innerHTML = post.isStarred ? '⭐' : '☆';
+      btnStar.title = post.isStarred ? 'Unstar post' : 'Star post';
+      btnStar.classList.toggle('active', post.isStarred);
+
+      const targets = post.memberPosts || [post];
+      await Promise.all(targets.map(p => updatePostFlags(p.postId, { isStarred: post.isStarred })));
+      targets.forEach(p => p.isStarred = post.isStarred);
+
+      // 3. MODIFIED: Localized DOM update for stars
+      const starredOnlyChecked = document.getElementById('cb-starred-only')?.checked;
+      if (!post.isStarred && starredOnlyChecked) {
+        card.style.display = 'none'; // Instantly hide if we unstar while in "Starred Only" mode
       }
-      await renderImageGrid(imgWrapper, post.mediaVariants[activeIndex].images);
-    };
-
-    prevBtn?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const newIdx = (activeIndex - 1 + post.mediaVariants.length) % post.mediaVariants.length;
-      switchVariant(newIdx);
     });
 
-    nextBtn?.addEventListener('click', (e) => {
+    // Batch Archive Updates
+    const btnArchive = card.querySelector('.btn-archive');
+    btnArchive?.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const newIdx = (activeIndex + 1) % post.mediaVariants.length;
-      switchVariant(newIdx);
+      post.isArchived = !post.isArchived;
+      btnArchive.title = post.isArchived ? 'Remove from archive' : 'Archive post';
+      btnArchive.innerHTML = post.isArchived ? '📥' : '📦';
+      btnArchive.classList.toggle('active', post.isArchived);
+
+      const targets = post.memberPosts || [post];
+      await Promise.all(targets.map(p => updatePostFlags(p.postId, { isArchived: post.isArchived })));
+      targets.forEach(p => p.isArchived = post.isArchived);
+
+      // 3. MODIFIED: Localized DOM updates instead of filterAndRender()
+      const showArchivedChecked = document.getElementById('cb-show-archived')?.checked;
+
+      if (post.isArchived && !showArchivedChecked) {
+        card.style.display = 'none'; // Instantly hide the card so you don't lose scroll position
+      } else {
+        // Otherwise, visually update the card in place
+        card.classList.toggle('is-archived', post.isArchived);
+
+        const authorLine = card.querySelector('.post-author-line');
+        if (post.isArchived) {
+          if (!authorLine.querySelector('.badge-archived')) {
+            authorLine.insertAdjacentHTML('beforeend', ` <span class="badge-archived" title="This post is archived">📦 Archived</span>`);
+          }
+        } else {
+          const badge = authorLine.querySelector('.badge-archived');
+          if (badge) badge.remove();
+        }
+      }
     });
+
+    return card;
   }
-
-  // Batch Star Updates
-  const btnStar = card.querySelector('.btn-star');
-  btnStar?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    post.isStarred = !post.isStarred;
-    btnStar.innerHTML = post.isStarred ? '⭐' : '☆';
-    btnStar.title = post.isStarred ? 'Unstar post' : 'Star post';
-    btnStar.classList.toggle('active', post.isStarred);
-
-    const targets = post.memberPosts || [post];
-    await Promise.all(targets.map(p => updatePostFlags(p.postId, { isStarred: post.isStarred })));
-    targets.forEach(p => p.isStarred = post.isStarred);
-  });
-
-  // Batch Archive Updates
-  const btnArchive = card.querySelector('.btn-archive');
-  btnArchive?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    post.isArchived = !post.isArchived;
-    btnArchive.title = post.isArchived ? 'Remove from archive' : 'Archive post';
-
-    const targets = post.memberPosts || [post];
-    await Promise.all(targets.map(p => updatePostFlags(p.postId, { isArchived: post.isArchived })));
-    targets.forEach(p => p.isArchived = post.isArchived);
-
-    filterAndRender();
-  });
-
-  return card;
-}
 
 async function renderImageGrid(container, imageUrls) {
   if (!container) return;
