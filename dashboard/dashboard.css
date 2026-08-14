@@ -58,6 +58,110 @@ body {
   font-size: 0.95rem;
 }
 
+/* Priority Query Manager */
+.query-manager {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 20px;
+}
+
+.query-manager-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.query-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.query-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.query-item.inactive {
+  opacity: 0.6;
+  background: var(--bg-secondary);
+}
+
+.query-color-picker {
+  -webkit-appearance: none;
+  border: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.query-color-picker::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.query-color-picker::-webkit-color-swatch {
+  border: 1px solid rgba(0,0,0,0.2);
+  border-radius: 4px;
+}
+
+.query-input {
+  flex: 1;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.query-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-query-action {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+}
+
+.btn-query-action:hover {
+  background: var(--border-color);
+}
+
+.btn-add-query {
+  background: var(--primary-color, #1976d2);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.btn-add-query:hover {
+  filter: brightness(1.1);
+}
+
 /* Custom Checkbox Dropdown CSS */
 .custom-dropdown {
   position: relative;
@@ -145,6 +249,7 @@ body {
   border-radius: 8px;
   padding: 16px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition: border-left 0.2s ease;
 }
 
 .post-header {

@@ -23,9 +23,15 @@
     <div class="filter-controls">
       <!-- Top Controls Row: Search Wrapper & Sources Dropdown -->
       <div class="filter-row top-row">
-        <div class="search-wrapper">
-          <input type="text" id="search-input" placeholder="Search posts... (e.g. crypto AND btc, author:&quot;John&quot;, /hiring/i)" />
-          <button id="btn-cheat-sheet" class="btn-secondary" title="Search Cheat Sheet">❓</button>
+        <div class="query-manager">
+        <div class="query-manager-header">
+            <span>🔍 Priority Query Waterfall</span>
+            <button id="btn-cheat-sheet" class="btn-secondary" title="Search Cheat Sheet">❓</button>
+            <button id="btn-add-query" class="btn-add-query">+ Add Query</button>
+        </div>
+        <ul id="priority-queries-list" class="query-list">
+            <!-- Query items rendered via JS -->
+        </ul>
         </div>
 
         <!-- Multi-Select Custom Dropdown Menu -->

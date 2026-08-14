@@ -1,6 +1,9 @@
 import { getAllPosts, getMediaBlob, getMediaCount, clearAllData, updatePostFlags } from '../lib/db.js';
 import { executeSearch, getHighlightTerms } from '../lib/search-engine.js';
 
+let priorityQueries = [];
+const DEFAULT_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899'];
+
 let allPosts = [];
 const imageObjectUrls = new Set();
 let seenObserver = null;
@@ -16,10 +19,11 @@ async function initDashboard() {
   try {
       allPosts = await getAllPosts(); // Store raw posts directly
 
-      renderStats();
+      await renderStats();
+      loadSavedQueries();
       populateGroupDropdown();
       setupIntersectionObserver();
-      await filterAndRender();
+      filterAndRender();
     } catch (err) {
       console.error("[FB Dashboard] Error loading posts from DB:", err?.message || err);
     }
@@ -127,6 +131,94 @@ async function initDashboard() {
   btnCheatSheet?.addEventListener('click', () => toggleDrawer(true));
   btnCloseDrawer?.addEventListener('click', () => toggleDrawer(false));
   backdrop?.addEventListener('click', () => toggleDrawer(false));
+}
+
+function loadSavedQueries() {
+  const data = chrome.storage.local.get(['priorityQueries']);
+    priorityQueries = data.priorityQueries || [
+      { id: Date.now().toString(), text: '', color: DEFAULT_COLORS[0], active: true }
+    ];
+
+    renderQueryList();
+
+    document.getElementById('btn-add-query')?.addEventListener('click', addQuery);
+}
+
+function saveQueries() {
+  chrome.storage.local.set({ priorityQueries });
+  filterAndRender();
+}
+
+function addQuery() {
+  const newColor = DEFAULT_COLORS[priorityQueries.length % DEFAULT_COLORS.length];
+  priorityQueries.push({
+    id: Date.now().toString(),
+    text: '',
+    color: newColor,
+    active: true
+  });
+  renderQueryList();
+  saveQueries();
+}
+
+function renderQueryList() {
+  const list = document.getElementById('priority-queries-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  priorityQueries.forEach((q, index) => {
+    const li = document.createElement('li');
+    li.className = `query-item ${q.active ? '' : 'inactive'}`;
+
+    li.innerHTML = `
+      <input type="checkbox" title="Toggle active status" class="query-toggle" ${q.active ? 'checked' : ''} data-id="${q.id}">
+      <input type="color" class="query-color-picker" value="${q.color}" data-id="${q.id}">
+      <input type="text" class="query-input" placeholder="Regex /.../ or keywords..." value="${escapeHtml(q.text)}" data-id="${q.id}">
+      <div class="query-actions">
+        <button class="btn-query-action move-up" data-index="${index}" ${index === 0 ? 'disabled' : ''}>▲</button>
+        <button class="btn-query-action move-down" data-index="${index}" ${index === priorityQueries.length - 1 ? 'disabled' : ''}>▼</button>
+        <button class="btn-query-action delete-query" data-id="${q.id}">✖</button>
+      </div>
+    `;
+    list.appendChild(li);
+  });
+
+  // Attach Listeners
+  list.querySelectorAll('.query-toggle').forEach(el => el.addEventListener('change', (e) => {
+    const q = priorityQueries.find(x => x.id === e.target.dataset.id);
+    if (q) { q.active = e.target.checked; renderQueryList(); saveQueries(); }
+  }));
+
+  list.querySelectorAll('.query-color-picker').forEach(el => el.addEventListener('change', (e) => {
+    const q = priorityQueries.find(x => x.id === e.target.dataset.id);
+    if (q) { q.color = e.target.value; saveQueries(); }
+  }));
+
+  list.querySelectorAll('.query-input').forEach(el => el.addEventListener('input', (e) => {
+    const q = priorityQueries.find(x => x.id === e.target.dataset.id);
+    if (q) { q.text = e.target.value; saveQueries(); }
+  }));
+
+  list.querySelectorAll('.move-up').forEach(el => el.addEventListener('click', (e) => {
+    const idx = parseInt(e.target.dataset.index);
+    if (idx > 0) {
+      [priorityQueries[idx - 1], priorityQueries[idx]] = [priorityQueries[idx], priorityQueries[idx - 1]];
+      renderQueryList(); saveQueries();
+    }
+  }));
+
+  list.querySelectorAll('.move-down').forEach(el => el.addEventListener('click', (e) => {
+    const idx = parseInt(e.target.dataset.index);
+    if (idx < priorityQueries.length - 1) {
+      [priorityQueries[idx], priorityQueries[idx + 1]] = [priorityQueries[idx + 1], priorityQueries[idx]];
+      renderQueryList(); saveQueries();
+    }
+  }));
+
+  list.querySelectorAll('.delete-query').forEach(el => el.addEventListener('click', (e) => {
+    priorityQueries = priorityQueries.filter(x => x.id !== e.target.dataset.id);
+    renderQueryList(); saveQueries();
+  }));
 }
 
 // Setup IntersectionObserver for 5 second visibility detection
@@ -353,44 +445,83 @@ function filterAndRender() {
     return group;
   });
 
-  // 2. Apply Filters to Consolidated Posts
-  let filteredPosts = consolidatedPosts.filter(post => {
-    return post.groups.some(g => selectedGroups.has(g.name));
-  });
+  // 2. Apply Base Filters to Consolidated Posts
+    let filteredPosts = consolidatedPosts.filter(post => {
+      return post.groups.some(g => selectedGroups.has(g.name));
+    });
 
-  filteredPosts = filteredPosts.filter(post => showArchived ? post.isArchived : !post.isArchived);
+    filteredPosts = filteredPosts.filter(post => showArchived ? post.isArchived : !post.isArchived);
+    if (starredOnly) filteredPosts = filteredPosts.filter(post => post.isStarred);
+    if (hideSeen) filteredPosts = filteredPosts.filter(post => !post.isSeen || post.isStarred);
 
-  if (starredOnly) {
-    filteredPosts = filteredPosts.filter(post => post.isStarred);
-  }
-
-  if (hideSeen) {
-    filteredPosts = filteredPosts.filter(post => !post.isSeen || post.isStarred);
-  }
-
-  filteredPosts = executeSearch(query, filteredPosts);
-
-  // 3. Sorting
-  filteredPosts.sort((a, b) => {
-    let valA, valB;
-    if (currentSortField === 'timestamp') {
-      valA = a.timestamp ? a.timestamp * 1000 : 0;
-      valB = b.timestamp ? b.timestamp * 1000 : 0;
-    } else {
-      valA = a.capturedAt ?? 0;
-      valB = b.capturedAt ?? 0;
-    }
-    return isDescOrder ? valB - valA : valA - valB;
-  });
-
-  // Extract highlight terms if toggle is enabled
+    // 3. PRIORITY WATERFALL SEARCH
+    let finalFeed = [];
+    let remainingPosts = [...filteredPosts];
+    let matchedHighlightTerms = [];
     const highlightKeywords = document.getElementById('cb-highlight-keywords')?.checked || false;
-    let activeTerms = [];
-    if (highlightKeywords && query) {
-      activeTerms = getHighlightTerms(query);
+
+    const activeQueries = priorityQueries.filter(q => q.active && q.text.trim());
+
+    if (activeQueries.length === 0) {
+      // If no queries are defined/active, just show everything that passed base filters
+      finalFeed = remainingPosts;
+    } else {
+      // Cascade through active queries
+      for (const pq of activeQueries) {
+        if (activeQueries.length === 0) {
+          // If no queries are defined/active, just show everything that passed base filters
+          finalFeed = remainingPosts;
+        } else {
+          // Cascade through active queries (Using forEach to get the priority index)
+          activeQueries.forEach((pq, index) => {
+            // Find matches in the REMAINING pool
+            const matches = executeSearch(pq.text, remainingPosts);
+
+            // Process matches
+            matches.forEach(post => {
+              post.queryColor = pq.color; // Tag with the color of the query that caught it
+              post.priorityIndex = index; // ⭐️ ADDED: Tag with priority tier
+              finalFeed.push(post);
+            });
+
+            // Extract keywords for highlighting
+            if (highlightKeywords) {
+              matchedHighlightTerms.push(...getHighlightTerms(pq.text));
+            }
+
+            // Remove caught posts from the pool so they don't match lower-priority queries
+            const matchedIds = new Set(matches.map(m => m.postId));
+            remainingPosts = remainingPosts.filter(p => !matchedIds.has(p.postId));
+          });
+        }
+      }
     }
 
-    renderFeed(filteredPosts, activeTerms);
+    // 4. Sorting (Tiered)
+        finalFeed.sort((a, b) => {
+          // ⭐️ PRIMARY TIER: Priority Group Sorting
+          // If a post wasn't caught by a query, it gets assigned Infinity (lowest priority)
+          const priorityA = a.priorityIndex !== undefined ? a.priorityIndex : Infinity;
+          const priorityB = b.priorityIndex !== undefined ? b.priorityIndex : Infinity;
+
+          if (priorityA !== priorityB) {
+            return priorityA - priorityB; // Lowest index (highest priority) comes first
+          }
+
+          // ⭐️ SECONDARY TIER: Time Sorting (Fallback for posts in the same group)
+          let valA, valB;
+          if (currentSortField === 'timestamp') {
+            valA = a.timestamp ? a.timestamp * 1000 : 0;
+            valB = b.timestamp ? b.timestamp * 1000 : 0;
+          } else {
+            valA = a.capturedAt ?? 0;
+            valB = b.capturedAt ?? 0;
+          }
+          return isDescOrder ? valB - valA : valA - valB;
+        });
+
+    // Pass the waterfall results and aggregated highlight terms to render
+    renderFeed(finalFeed, matchedHighlightTerms);
   }
 
 function createPostCard(post, activeTerms = []) {
@@ -399,7 +530,15 @@ function createPostCard(post, activeTerms = []) {
   const classes = ['post-card'];
   if (post.isSeen) classes.push('is-seen');
   if (post.isArchived) classes.push('is-archived');
+
   card.className = classes.join(' ');
+  // Apply query color coding if it was caught by a priority query
+  if (post.queryColor) {
+    card.style.borderLeft = `6px solid ${post.queryColor}`;
+  } else {
+    card.style.borderLeft = `6px solid transparent`; // Reset
+  }
+
   card.dataset.id = post.postId;
   card.dataset.memberIds = post.memberPosts ? post.memberPosts.map(p => p.postId).join(',') : post.postId;
 
