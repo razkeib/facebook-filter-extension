@@ -1,5 +1,5 @@
 import { getAllPosts, getMediaBlob, getMediaCount, clearAllData, updatePostFlags } from '../lib/db.js';
-import { executeSearch } from '../lib/search-engine.js';
+import { executeSearch, getHighlightTerms } from '../lib/search-engine.js';
 
 let allPosts = [];
 const imageObjectUrls = new Set();
@@ -29,6 +29,7 @@ async function initDashboard() {
   document.getElementById('cb-starred-only')?.addEventListener('change', filterAndRender);
   document.getElementById('cb-hide-seen')?.addEventListener('change', filterAndRender);
   document.getElementById('cb-show-archived')?.addEventListener('change', filterAndRender);
+  document.getElementById('cb-highlight-keywords')?.addEventListener('change', filterAndRender);
 
   // Button Listeners
     document.getElementById('btn-diagnostics')?.addEventListener('click', () => {
@@ -382,10 +383,17 @@ function filterAndRender() {
     return isDescOrder ? valB - valA : valA - valB;
   });
 
-  renderFeed(filteredPosts);
-}
+  // Extract highlight terms if toggle is enabled
+    const highlightKeywords = document.getElementById('cb-highlight-keywords')?.checked || false;
+    let activeTerms = [];
+    if (highlightKeywords && query) {
+      activeTerms = getHighlightTerms(query);
+    }
 
-function createPostCard(post) {
+    renderFeed(filteredPosts, activeTerms);
+  }
+
+function createPostCard(post, activeTerms = []) {
   const card = document.createElement('article');
 
   const classes = ['post-card'];
@@ -459,7 +467,7 @@ function createPostCard(post) {
         </button>
       </div>
     </div>
-    <div class="post-content" dir="auto">${escapeHtml(post.text || '')}</div>
+    <div class="post-content" dir="auto">${highlightTextSafe(post.text || '', activeTerms)}</div>
     ${imagesContainerHtml}
   `;
 
@@ -554,7 +562,55 @@ async function renderImageGrid(container, imageUrls) {
   }
 }
 
-async function renderFeed(posts) {
+function highlightTextSafe(rawText, terms) {
+  const textStr = rawText || '';
+  if (!terms || terms.length === 0) return escapeHtml(textStr);
+
+  const regexPatterns = [];
+  terms.forEach(term => {
+    if (term.type === 'regex') {
+       regexPatterns.push(term.value.source);
+    } else if (term.value) {
+       // Escape special regex characters in plain text searches
+       regexPatterns.push(term.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    }
+  });
+
+  if (regexPatterns.length === 0) return escapeHtml(textStr);
+
+  // Combine all patterns into a single global, case-insensitive regex
+  const combinedRegex = new RegExp(regexPatterns.join('|'), 'gi');
+
+  let result = '';
+  let lastIndex = 0;
+  let match;
+
+  // Use .exec() on raw text to find matches before escaping HTML.
+  // This prevents accidentally matching/breaking entities like &amp;
+  // and prevents nested <mark> tags!
+  while ((match = combinedRegex.exec(textStr)) !== null) {
+    // Prevent infinite loops on zero-length matches from bad user regex
+    if (match.index === combinedRegex.lastIndex) {
+        combinedRegex.lastIndex++;
+        continue;
+    }
+
+    // 1. Escape and append the text BEFORE the match
+    result += escapeHtml(textStr.substring(lastIndex, match.index));
+
+    // 2. Escape and wrap the MATCHED text
+    result += `<mark class="kw-highlight">${escapeHtml(match[0])}</mark>`;
+
+    lastIndex = combinedRegex.lastIndex;
+  }
+
+  // 3. Escape and append remaining text AFTER the last match
+  result += escapeHtml(textStr.substring(lastIndex));
+
+  return result;
+}
+
+async function renderFeed(posts, activeTerms = []) {
   const container = document.getElementById('feed-container');
   const showingStat = document.getElementById('stat-showing-count');
 
@@ -575,8 +631,8 @@ async function renderFeed(posts) {
   }
 
   for (const post of posts) {
-    const card = createPostCard(post);
-    container.appendChild(card);
+      const card = createPostCard(post, activeTerms);
+      container.appendChild(card);
 
     if (seenObserver) seenObserver.observe(card);
 
