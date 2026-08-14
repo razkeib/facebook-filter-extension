@@ -5,22 +5,27 @@ let attachedTabId = null;
 const pendingRequests = new Map();
 
 // --- RELOAD PURGE LOGIC ---
+const ENABLE_RELOAD_PURGE = false; // Set to true to purge data on reload, or false to preserve it
+
 chrome.storage.session.get(['isInitialized']).then(async (result) => {
   if (!result.isInitialized) {
-    await clearAllData();
+    if (ENABLE_RELOAD_PURGE) {
+      await clearAllData();
 
-    // Reset diagnostic data in memory and chrome.storage.local
-    keywordDiscardCounts = {};
-    totalDiscardedCount = 0;
-    discardedPostIds = [];
+      // Reset diagnostic data in memory and chrome.storage.local
+      keywordDiscardCounts = {};
+      totalDiscardedCount = 0;
+      discardedPostIds = [];
 
-    await chrome.storage.local.set({
-      keywordDiscardCounts: {},
-      totalDiscardedCount: 0,
-      discardedPostIds: []
-    });
+      await chrome.storage.local.set({
+        keywordDiscardCounts: {},
+        totalDiscardedCount: 0,
+        discardedPostIds: []
+      });
 
-    console.log("[FB Filter] Extension reloaded or started. Database and diagnostic stats purged.");
+      console.log("[FB Filter] Extension reloaded or started. Database and diagnostic stats purged.");
+    }
+
     await chrome.storage.session.set({ isInitialized: true });
   }
 });

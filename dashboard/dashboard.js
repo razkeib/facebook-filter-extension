@@ -26,7 +26,6 @@ async function initDashboard() {
 
   // Setup Event Listeners
   document.getElementById('search-input')?.addEventListener('input', filterAndRender);
-  document.getElementById('cb-hide-text-duplicates')?.addEventListener('change', filterAndRender);
   document.getElementById('cb-starred-only')?.addEventListener('change', filterAndRender);
   document.getElementById('cb-hide-seen')?.addEventListener('change', filterAndRender);
   document.getElementById('cb-show-archived')?.addEventListener('change', filterAndRender);
@@ -129,33 +128,42 @@ async function initDashboard() {
   backdrop?.addEventListener('click', () => toggleDrawer(false));
 }
 
-// Setup IntersectionObserver for 1.5 second visibility detection
+// Setup IntersectionObserver for 5 second visibility detection
 function setupIntersectionObserver() {
   if (seenObserver) seenObserver.disconnect();
 
   seenObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
-      const postId = entry.target.dataset.id;
+      const card = entry.target;
+      const postId = card.dataset.id;
       if (!postId) return;
 
       if (entry.isIntersecting) {
-        // Start 1.5s timer when post enters viewport at 50%+ visibility
         if (!visibleTimers.has(postId)) {
           const timer = setTimeout(async () => {
-            const post = allPosts.find(p => p.postId === postId);
-            if (post && !post.isSeen) {
-              post.isSeen = true;
-              await updatePostFlags(postId, { isSeen: true });
-              const card = document.querySelector(`.post-card[data-id="${postId}"]`);
-              if (card) card.classList.add('is-seen');
+            // Retrieve all IDs assigned to this consolidated card
+            const memberIds = card.dataset.memberIds ? card.dataset.memberIds.split(',') : [postId];
+            let markedSeen = false;
+
+            // Batch update all duplicates to 'Seen'
+            await Promise.all(memberIds.map(async (id) => {
+              const p = allPosts.find(x => x.postId === id);
+              if (p && !p.isSeen) {
+                p.isSeen = true;
+                await updatePostFlags(id, { isSeen: true });
+                markedSeen = true;
+              }
+            }));
+
+            if (markedSeen && card) {
+              card.classList.add('is-seen');
             }
             visibleTimers.delete(postId);
-          }, 1500);
+          }, 5000);
 
           visibleTimers.set(postId, timer);
         }
       } else {
-        // Cancel timer if user scrolls past before 1.5s
         if (visibleTimers.has(postId)) {
           clearTimeout(visibleTimers.get(postId));
           visibleTimers.delete(postId);
@@ -280,7 +288,6 @@ function updateDropdownLabel() {
 
 function filterAndRender() {
   const query = document.getElementById('search-input')?.value || '';
-  const hideDuplicates = document.getElementById('cb-hide-text-duplicates')?.checked || false;
   const starredOnly = document.getElementById('cb-starred-only')?.checked || false;
   const hideSeen = document.getElementById('cb-hide-seen')?.checked || false;
   const showArchived = document.getElementById('cb-show-archived')?.checked || false;
@@ -288,40 +295,81 @@ function filterAndRender() {
   const checkedBoxes = document.querySelectorAll('.group-cb:checked');
   const selectedGroups = new Set(Array.from(checkedBoxes).map(cb => cb.value));
 
-  // 1. Group Filter
-  let filteredPosts = allPosts.filter(post => {
-    return post.group?.name ? selectedGroups.has(post.group.name) : false;
+  // 1. Pre-process: Consolidate / Group Posts by Text
+  const groupedPostsMap = new Map();
+  for (const post of allPosts) {
+    const normText = (post.text || '').trim().toLowerCase();
+    const key = normText || post.postId; // Fallback to ID if post has no text
+
+    if (!groupedPostsMap.has(key)) {
+      groupedPostsMap.set(key, {
+        ...post,
+        groupKey: key,
+        memberPosts: [post],
+        groups: post.group && post.group.name ? [post.group] : []
+      });
+    } else {
+      const existing = groupedPostsMap.get(key);
+      existing.memberPosts.push(post);
+
+      // Append unique group sources
+      if (post.group && post.group.name && !existing.groups.some(g => g.name === post.group.name)) {
+        existing.groups.push(post.group);
+      }
+    }
+  }
+
+  // Map into an array and evaluate consolidated flags & distinct media variants
+  let consolidatedPosts = Array.from(groupedPostsMap.values()).map(group => {
+    group.isStarred = group.memberPosts.some(p => p.isStarred);
+    group.isArchived = group.memberPosts.every(p => p.isArchived); // Only hide if ALL are archived
+    group.isSeen = group.memberPosts.some(p => p.isSeen); // Considered seen if ANY are seen
+
+    // Inject grouped string for search-engine.js compatibility
+    group.group = { name: group.groups.map(g => g.name).join(', ') };
+
+    // Assign the ID of the most recent member to the parent card
+    group.postId = group.memberPosts.sort((a, b) => (b.capturedAt || 0) - (a.capturedAt || 0))[0].postId;
+
+    // Extract unique media variants across duplicate member posts
+    const mediaVariants = [];
+    const seenVariantKeys = new Set();
+
+    for (const p of group.memberPosts) {
+      if (p.images && p.images.length > 0) {
+        const key = p.images.slice().sort().join('|'); // Key based on sorted image URLs
+        if (!seenVariantKeys.has(key)) {
+          seenVariantKeys.add(key);
+          mediaVariants.push({
+            sourceGroup: p.group?.name || 'Facebook Post',
+            images: p.images
+          });
+        }
+      }
+    }
+    group.mediaVariants = mediaVariants;
+
+    return group;
   });
 
-  // 2. Archive Filter
+  // 2. Apply Filters to Consolidated Posts
+  let filteredPosts = consolidatedPosts.filter(post => {
+    return post.groups.some(g => selectedGroups.has(g.name));
+  });
+
   filteredPosts = filteredPosts.filter(post => showArchived ? post.isArchived : !post.isArchived);
 
-  // 3. Starred Filter
   if (starredOnly) {
     filteredPosts = filteredPosts.filter(post => post.isStarred);
   }
 
-  // 4. Hide Seen Filter (Starred posts bypass hide seen)
   if (hideSeen) {
     filteredPosts = filteredPosts.filter(post => !post.isSeen || post.isStarred);
   }
 
-  // 5. Search Engine Filter
   filteredPosts = executeSearch(query, filteredPosts);
 
-  // 6. Text Deduplication Filter
-  if (hideDuplicates) {
-    const seenTexts = new Set();
-    filteredPosts = filteredPosts.filter(post => {
-      const normText = (post.text || '').trim().toLowerCase();
-      if (!normText) return true;
-      if (seenTexts.has(normText)) return false;
-      seenTexts.add(normText);
-      return true;
-    });
-  }
-
-  // 7. Sorting
+  // 3. Sorting
   filteredPosts.sort((a, b) => {
     let valA, valB;
     if (currentSortField === 'timestamp') {
@@ -340,12 +388,12 @@ function filterAndRender() {
 function createPostCard(post) {
   const card = document.createElement('article');
 
-  // Attach state classes
   const classes = ['post-card'];
   if (post.isSeen) classes.push('is-seen');
   if (post.isArchived) classes.push('is-archived');
   card.className = classes.join(' ');
   card.dataset.id = post.postId;
+  card.dataset.memberIds = post.memberPosts ? post.memberPosts.map(p => p.postId).join(',') : post.postId;
 
   const avatarHtml = post.author?.profilePic
     ? `<img src="${post.author.profilePic}" class="author-avatar" alt="Avatar" referrerpolicy="no-referrer" />`
@@ -355,12 +403,14 @@ function createPostCard(post) {
     ? `<a href="${post.author.url}" target="_blank" class="post-author">${escapeHtml(post.author.name || "Unknown Author")}</a>`
     : `<span class="post-author">${escapeHtml(post.author?.name || "Unknown Author")}</span>`;
 
-  const groupLink = post.group?.url
-    ? `<a href="${post.group.url}" target="_blank" class="post-group">${escapeHtml(post.group.name)}</a>`
-    : escapeHtml(post.group?.name || "");
+  const groupLinksHtml = (post.groups || [post.group]).filter(g => g && g.name && g.name !== "Facebook Feed").map(g => {
+    return g.url
+      ? `<a href="${g.url}" target="_blank" class="post-group">${escapeHtml(g.name)}</a>`
+      : escapeHtml(g.name);
+  }).join(' • ');
 
-  const groupText = post.group?.name && post.group.name !== "Facebook Feed"
-    ? ` <span style="color: var(--text-secondary); font-weight: normal;">in</span> ${groupLink}`
+  const groupText = groupLinksHtml.length > 0
+    ? ` <span style="color: var(--text-secondary); font-weight: normal;">in</span> ${groupLinksHtml}`
     : '';
 
   const timeHtml = post.permalinkUrl
@@ -371,9 +421,24 @@ function createPostCard(post) {
     ? `<span class="badge-archived" title="This post is archived">📦 Archived</span>`
     : '';
 
+  // Construct Media Switcher UI if media exists
   let imagesContainerHtml = '';
-  if (post.images && post.images.length > 0) {
-    imagesContainerHtml = `<div class="post-images"></div>`;
+  if (post.mediaVariants && post.mediaVariants.length > 0) {
+    const hasMultipleVariants = post.mediaVariants.length > 1;
+    const switcherHtml = hasMultipleVariants ? `
+      <div class="media-switcher">
+        <button class="btn-media-nav btn-media-prev" title="Previous media variant">◀</button>
+        <span class="media-variant-info">Media 1 of ${post.mediaVariants.length} (${escapeHtml(post.mediaVariants[0].sourceGroup)})</span>
+        <button class="btn-media-nav btn-media-next" title="Next media variant">▶</button>
+      </div>
+    ` : '';
+
+    imagesContainerHtml = `
+      <div class="post-media-section">
+        ${switcherHtml}
+        <div class="post-images"></div>
+      </div>
+    `;
   }
 
   card.innerHTML = `
@@ -398,7 +463,36 @@ function createPostCard(post) {
     ${imagesContainerHtml}
   `;
 
-  // Action listeners with dynamic title updates
+  // Attach Media Navigation Event Listeners
+  if (post.mediaVariants && post.mediaVariants.length > 1) {
+    let activeIndex = 0;
+    const prevBtn = card.querySelector('.btn-media-prev');
+    const nextBtn = card.querySelector('.btn-media-next');
+    const infoSpan = card.querySelector('.media-variant-info');
+    const imgWrapper = card.querySelector('.post-images');
+
+    const switchVariant = async (newIdx) => {
+      activeIndex = newIdx;
+      if (infoSpan) {
+        infoSpan.textContent = `Media ${activeIndex + 1} of ${post.mediaVariants.length} (${post.mediaVariants[activeIndex].sourceGroup})`;
+      }
+      await renderImageGrid(imgWrapper, post.mediaVariants[activeIndex].images);
+    };
+
+    prevBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const newIdx = (activeIndex - 1 + post.mediaVariants.length) % post.mediaVariants.length;
+      switchVariant(newIdx);
+    });
+
+    nextBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const newIdx = (activeIndex + 1) % post.mediaVariants.length;
+      switchVariant(newIdx);
+    });
+  }
+
+  // Batch Star Updates
   const btnStar = card.querySelector('.btn-star');
   btnStar?.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -406,19 +500,58 @@ function createPostCard(post) {
     btnStar.innerHTML = post.isStarred ? '⭐' : '☆';
     btnStar.title = post.isStarred ? 'Unstar post' : 'Star post';
     btnStar.classList.toggle('active', post.isStarred);
-    await updatePostFlags(post.postId, { isStarred: post.isStarred });
+
+    const targets = post.memberPosts || [post];
+    await Promise.all(targets.map(p => updatePostFlags(p.postId, { isStarred: post.isStarred })));
+    targets.forEach(p => p.isStarred = post.isStarred);
   });
 
+  // Batch Archive Updates
   const btnArchive = card.querySelector('.btn-archive');
   btnArchive?.addEventListener('click', async (e) => {
     e.stopPropagation();
     post.isArchived = !post.isArchived;
     btnArchive.title = post.isArchived ? 'Remove from archive' : 'Archive post';
-    await updatePostFlags(post.postId, { isArchived: post.isArchived });
-    filterAndRender(); // Refresh feed immediately on toggle
+
+    const targets = post.memberPosts || [post];
+    await Promise.all(targets.map(p => updatePostFlags(p.postId, { isArchived: post.isArchived })));
+    targets.forEach(p => p.isArchived = post.isArchived);
+
+    filterAndRender();
   });
 
   return card;
+}
+
+async function renderImageGrid(container, imageUrls) {
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (!imageUrls || imageUrls.length === 0) return;
+
+  for (const imgUrl of imageUrls) {
+    try {
+      const mediaRecord = await getMediaBlob(imgUrl);
+      if (mediaRecord) {
+        const byteCharacters = atob(mediaRecord.base64Data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: mediaRecord.mimeType });
+        const objectUrl = URL.createObjectURL(blob);
+        imageObjectUrls.add(objectUrl);
+
+        const imgEl = document.createElement('img');
+        imgEl.src = objectUrl;
+        imgEl.alt = "Post image";
+        container.appendChild(imgEl);
+      }
+    } catch (e) {
+      console.warn(`[FB Dashboard] Failed to load image blob`, e);
+    }
+  }
 }
 
 async function renderFeed(posts) {
@@ -428,7 +561,6 @@ async function renderFeed(posts) {
   if (showingStat) showingStat.textContent = posts ? posts.length : 0;
   if (!container) return;
 
-  // Disconnect observer before rebuilding DOM
   if (seenObserver) seenObserver.disconnect();
   visibleTimers.forEach(timer => clearTimeout(timer));
   visibleTimers.clear();
@@ -446,37 +578,12 @@ async function renderFeed(posts) {
     const card = createPostCard(post);
     container.appendChild(card);
 
-    // Observe card for viewport entry
     if (seenObserver) seenObserver.observe(card);
 
-    // Render post images...
-    if (post.images && post.images.length > 0) {
+    // Render the default (first) media variant if present
+    if (post.mediaVariants && post.mediaVariants.length > 0) {
       const imgWrapper = card.querySelector('.post-images');
-      if (imgWrapper) {
-        for (const imgUrl of post.images) {
-          try {
-            const mediaRecord = await getMediaBlob(imgUrl);
-            if (mediaRecord) {
-              const byteCharacters = atob(mediaRecord.base64Data);
-              const byteNumbers = new Array(byteCharacters.length);
-              for (let i = 0; i < byteCharacters.length; i++) {
-                byteNumbers[i] = byteCharacters.charCodeAt(i);
-              }
-              const byteArray = new Uint8Array(byteNumbers);
-              const blob = new Blob([byteArray], { type: mediaRecord.mimeType });
-              const objectUrl = URL.createObjectURL(blob);
-              imageObjectUrls.add(objectUrl);
-
-              const imgEl = document.createElement('img');
-              imgEl.src = objectUrl;
-              imgEl.alt = "Post image";
-              imgWrapper.appendChild(imgEl);
-            }
-          } catch (e) {
-            console.warn(`[FB Dashboard] Failed to load image blob for post ${post.postId}`, e);
-          }
-        }
-      }
+      await renderImageGrid(imgWrapper, post.mediaVariants[0].images);
     }
   }
 }

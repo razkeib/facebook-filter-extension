@@ -547,3 +547,44 @@ body {
   margin-left: 6px;
   vertical-align: middle;
 }
+
+/* Media Variant Switcher Controls */
+.post-media-section {
+  margin-top: 12px;
+}
+
+.media-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.media-variant-info {
+  font-weight: 500;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-media-nav {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  transition: background-color 0.15s ease;
+}
+
+.btn-media-nav:hover {
+  background-color: var(--border-color);
+}
