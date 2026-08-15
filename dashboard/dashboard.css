@@ -43,6 +43,21 @@ body {
   font-size: 0.9rem;
 }
 
+.bottom-controls-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.controls-sub-row {
+  display: flex;
+  justify-content: space-between; /* Pushes left and right groups apart */
+  align-items: center;
+  width: 100%;
+}
+
 .filter-controls {
   display: flex;
   gap: 12px;
@@ -58,13 +73,19 @@ body {
   font-size: 0.95rem;
 }
 
+/* Container adjustments */
+.filter-row.top-row {
+  display: block;
+  width: 100%;
+}
+
 /* Priority Query Manager */
 .query-manager {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 12px;
+  background: transparent;
+  border: none;
+  padding: 0;
   margin-bottom: 20px;
+  width: 100%;
 }
 
 .query-manager-header {
@@ -73,6 +94,8 @@ body {
   align-items: center;
   margin-bottom: 12px;
   font-weight: 600;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .query-list {
@@ -86,12 +109,20 @@ body {
 
 .query-item {
   display: flex;
-  align-items: center;
+  align-items: center; /* Ensures everything in the row sits perfectly middle-aligned */
   gap: 8px;
   background: var(--card-bg);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 6px 10px;
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.query-item input[type="checkbox"] {
+  margin: 0;
+  margin-top: 8px; /* Tweak to vertically center with the first text line */
+  cursor: pointer;
+  flex: 0 0 auto;
 }
 
 .query-item.inactive {
@@ -99,39 +130,49 @@ body {
   background: var(--bg-secondary);
 }
 
+/* Compact Circle Color Picker */
 .query-color-picker {
-  -webkit-appearance: none;
-  border: none;
+  flex: 0 0 auto; /* PREVENTS Flexbox from stretching or shrinking the input */
+  align-self: center;
   width: 24px;
   height: 24px;
-  border-radius: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
   cursor: pointer;
-  padding: 0;
-}
-
-.query-color-picker::-webkit-color-swatch-wrapper {
-  padding: 0;
 }
 
 .query-color-picker::-webkit-color-swatch {
-  border: 1px solid rgba(0,0,0,0.2);
+  border: 1px solid var(--border-color);
   border-radius: 4px;
 }
 
+.query-color-picker::-moz-color-swatch {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+/* Auto-expanding Text Area */
 .query-input {
-  flex: 1;
+  flex: 1; /* Take the absolute majority of space */
   border: 1px solid var(--border-color);
   background: var(--bg-secondary);
   color: var(--text-primary);
-  padding: 6px 10px;
-  border-radius: 4px;
+  padding: 6px 12px;
+  border-radius: 6px;
   font-family: monospace;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  resize: none; /* Disable manual dragging */
+  overflow-y: hidden; /* Hide scrollbars completely */
+  min-height: 20px;
+  line-height: 1.5;
+  box-sizing: border-box;
 }
 
 .query-actions {
   display: flex;
   gap: 4px;
+  margin-top: 4px; /* Keep buttons near the top of the container */
 }
 
 .btn-query-action {
@@ -165,22 +206,12 @@ body {
 /* Custom Checkbox Dropdown CSS */
 .custom-dropdown {
   position: relative;
-  min-width: 220px;
+  min-width: 200px;
+  margin-top: 0; /* Reset any margins from previous steps */
 }
 
 .dropdown-trigger {
-  width: 100%;
-  padding: 10px 14px;
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 0.95rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  color: var(--text-primary);
-  box-sizing: border-box;
+  padding: 8px 14px; /* Slightly compact to fit inside the header naturally */
 }
 
 .dropdown-arrow {
@@ -467,7 +498,9 @@ body {
 }
 
 .top-row {
-  gap: 12px;
+  gap: 20px;
+  align-items: flex-start; /* Aligns dropdown with the top of the query list */
+  justify-content: space-between;
 }
 
 .search-wrapper {
@@ -572,12 +605,12 @@ body {
 /* Bottom Controls Row Styling */
 .filter-row.bottom-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start; /* Align to the top of the flex items */
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-color, #e5e7eb);
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
 }
 
 .showing-counter {

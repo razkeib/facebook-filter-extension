@@ -21,78 +21,84 @@
     </header>
 
     <div class="filter-controls">
-      <!-- Top Controls Row: Search Wrapper & Sources Dropdown -->
-      <div class="filter-row top-row">
-        <div class="query-manager">
-        <div class="query-manager-header">
-            <span>🔍 Priority Query Waterfall</span>
-            <button id="btn-cheat-sheet" class="btn-secondary" title="Search Cheat Sheet">❓</button>
-            <button id="btn-add-query" class="btn-add-query">+ Add Query</button>
-        </div>
-        <ul id="priority-queries-list" class="query-list">
-            <!-- Query items rendered via JS -->
-        </ul>
-        </div>
-
-        <!-- Multi-Select Custom Dropdown Menu -->
-        <div class="custom-dropdown" id="group-dropdown-wrapper">
-          <button class="dropdown-trigger" id="dropdown-btn">
-            <span id="dropdown-label">All Sources</span>
-            <span class="dropdown-arrow">▼</span>
-          </button>
-
-          <div class="dropdown-menu hidden" id="dropdown-menu">
-            <label class="dropdown-item toggle-all-item">
-              <input type="checkbox" id="cb-toggle-all" checked />
-              <strong>Toggle All / Select All</strong>
-            </label>
-            <div class="dropdown-divider"></div>
-            <div id="dropdown-options-list" class="dropdown-options-list">
-              <!-- Dynamic source checkboxes loaded here -->
+        <!-- Top Controls Row (Queries Only - Unchanged) -->
+        <div class="filter-row top-row">
+            <div class="query-manager">
+                <div class="query-manager-header">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span>🔍 Priority Query Waterfall</span>
+                        <button id="btn-cheat-sheet" class="btn-secondary" title="Search Cheat Sheet">❓</button>
+                    </div>
+                    <button id="btn-add-query" class="btn-add-query">+ Add Query</button>
+                </div>
+                <ul id="priority-queries-list" class="query-list">
+                    <!-- Query items rendered via JS -->
+                </ul>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Bottom Controls Row: Counter (Left), Sorting (Middle), Deduplication (Right) -->
-      <div class="filter-row bottom-row">
-        <div class="showing-counter">
-          Showing <strong id="stat-showing-count">0</strong> of <strong id="stat-post-count">0</strong> posts
         </div>
 
-        <div class="sort-controls-group">
-          <label for="sort-select">Sort by:</label>
-          <select id="sort-select" class="sort-dropdown">
-            <option value="tableOrder">Capture Time</option>
-            <option value="timestamp">General Post Time</option>
-          </select>
-          <button id="btn-sort-dir" class="btn-secondary btn-sort" title="Toggle Sort Direction">
-            <span id="sort-dir-icon">⬇️</span> <span id="sort-dir-text">Newest First</span>
-          </button>
+        <!-- Bottom Controls Area (Two Horizontal Rows) -->
+        <div class="filter-row bottom-controls-container">
+
+            <!-- Sub-Row 1: Stats (Left) & Sorting (Right) -->
+            <div class="controls-sub-row">
+                <div class="showing-counter">
+                    Showing <strong id="stat-showing-count">0</strong> of <strong id="stat-post-count">0</strong> posts
+                </div>
+
+                <div class="sort-controls-group" style="display: flex; gap: 8px; align-items: center;">
+                    <label for="sort-select" style="font-size: 0.88rem; color: var(--text-secondary);">Sort by:</label>
+                    <select id="sort-select" class="sort-dropdown">
+                        <option value="tableOrder">Capture Time</option>
+                        <option value="timestamp">General Post Time</option>
+                    </select>
+                    <button id="btn-sort-dir" class="btn-secondary btn-sort" title="Toggle Sort Direction">
+                        <span id="sort-dir-icon">⬇️</span> <span id="sort-dir-text">Newest First</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sub-Row 2: Toggles (Left) & Sources Dropdown (Right) -->
+            <div class="controls-sub-row" style="margin-top: 12px;">
+                <div class="filter-toggles-group" style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <label class="toggle-pill">
+                        <input type="checkbox" id="cb-starred-only" />
+                        <span>⭐ Starred Only</span>
+                    </label>
+                    <label class="toggle-pill">
+                        <input type="checkbox" id="cb-hide-seen" />
+                        <span>👁️ Hide Seen</span>
+                    </label>
+                    <label class="toggle-pill">
+                        <input type="checkbox" id="cb-show-archived" />
+                        <span>📦 Show Archived</span>
+                    </label>
+                    <label class="toggle-pill">
+                        <input type="checkbox" id="cb-highlight-keywords" />
+                        <span>🖍️ Highlight Keywords</span>
+                    </label>
+                </div>
+
+                <!-- Sources Dropdown -->
+                <div class="custom-dropdown" id="group-dropdown-wrapper">
+                    <button class="dropdown-trigger sort-dropdown" id="dropdown-btn" style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 10px;">
+                        <span id="dropdown-label">All Sources Selected</span>
+                        <span class="dropdown-arrow">▼</span>
+                    </button>
+                    <div class="dropdown-menu hidden" id="dropdown-menu" style="right: 0; left: auto; min-width: 220px;">
+                        <label class="dropdown-item toggle-all-item">
+                            <input type="checkbox" id="cb-toggle-all" checked />
+                            <strong>Toggle All / Select All</strong>
+                        </label>
+                        <div class="dropdown-divider"></div>
+                        <div id="dropdown-options-list" class="dropdown-options-list">
+                            <!-- Dynamic source checkboxes loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
-
-        <div class="filter-toggles-group">
-          <label class="toggle-pill">
-            <input type="checkbox" id="cb-starred-only" />
-            <span>⭐ Starred Only</span>
-          </label>
-
-          <label class="toggle-pill">
-            <input type="checkbox" id="cb-hide-seen" />
-            <span>👁️ Hide Seen</span>
-          </label>
-
-          <label class="toggle-pill">
-            <input type="checkbox" id="cb-show-archived" />
-            <span>📦 Show Archived</span>
-          </label>
-
-          <label class="toggle-pill">
-            <input type="checkbox" id="cb-highlight-keywords" />
-            <span>🖍️ Highlight Keywords</span>
-          </label>
-        </div>
-      </div>
     </div>
 
     <main class="feed-grid" id="feed-container">

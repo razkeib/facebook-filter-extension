@@ -20,7 +20,7 @@ async function initDashboard() {
       allPosts = await getAllPosts(); // Store raw posts directly
 
       await renderStats();
-      loadSavedQueries();
+      await loadSavedQueries();
       populateGroupDropdown();
       setupIntersectionObserver();
       filterAndRender();
@@ -133,15 +133,20 @@ async function initDashboard() {
   backdrop?.addEventListener('click', () => toggleDrawer(false));
 }
 
-function loadSavedQueries() {
-  const data = chrome.storage.local.get(['priorityQueries']);
-    priorityQueries = data.priorityQueries || [
-      { id: Date.now().toString(), text: '', color: DEFAULT_COLORS[0], active: true }
-    ];
+async function loadSavedQueries() {
+  const data = await chrome.storage.local.get(['priorityQueries']);
+  priorityQueries = data.priorityQueries || [
+    { id: Date.now().toString(), text: '', color: DEFAULT_COLORS[0], active: true }
+  ];
 
-    renderQueryList();
+  renderQueryList();
 
-    document.getElementById('btn-add-query')?.addEventListener('click', addQuery);
+  // Prevent duplicate event listeners if loadSavedQueries is called multiple times
+  const addBtn = document.getElementById('btn-add-query');
+  if (addBtn && !addBtn.dataset.listenerAttached) {
+    addBtn.addEventListener('click', addQuery);
+    addBtn.dataset.listenerAttached = 'true';
+  }
 }
 
 function saveQueries() {
@@ -170,10 +175,11 @@ function renderQueryList() {
     const li = document.createElement('li');
     li.className = `query-item ${q.active ? '' : 'inactive'}`;
 
+    // Replaced <input type="text"> with <textarea rows="1" dir="auto">
     li.innerHTML = `
       <input type="checkbox" title="Toggle active status" class="query-toggle" ${q.active ? 'checked' : ''} data-id="${q.id}">
       <input type="color" class="query-color-picker" value="${q.color}" data-id="${q.id}">
-      <input type="text" class="query-input" placeholder="Regex /.../ or keywords..." value="${escapeHtml(q.text)}" data-id="${q.id}">
+      <textarea class="query-input" placeholder="Regex /.../ or keywords..." data-id="${q.id}" rows="1" dir="auto">${escapeHtml(q.text)}</textarea>
       <div class="query-actions">
         <button class="btn-query-action move-up" data-index="${index}" ${index === 0 ? 'disabled' : ''}>▲</button>
         <button class="btn-query-action move-down" data-index="${index}" ${index === priorityQueries.length - 1 ? 'disabled' : ''}>▼</button>
@@ -183,7 +189,30 @@ function renderQueryList() {
     list.appendChild(li);
   });
 
-  // Attach Listeners
+  // Attach Textarea Auto-Resize Listeners
+  const textAreas = list.querySelectorAll('.query-input');
+  textAreas.forEach(el => {
+    // Function to calculate and apply the correct height based on content
+    const autoResize = () => {
+      el.style.height = 'auto'; // Reset first to shrink if text was deleted
+      el.style.height = el.scrollHeight + 'px'; // Expand to fit
+    };
+
+    // Apply exact height immediately upon rendering
+    requestAnimationFrame(autoResize);
+
+    // Update height & save to database on keystroke
+    el.addEventListener('input', (e) => {
+      autoResize();
+      const q = priorityQueries.find(x => x.id === e.target.dataset.id);
+      if (q) {
+        q.text = e.target.value;
+        saveQueries();
+      }
+    });
+  });
+
+  // Attach Other Listeners (Checkbox, Color, Arrows, Delete)
   list.querySelectorAll('.query-toggle').forEach(el => el.addEventListener('change', (e) => {
     const q = priorityQueries.find(x => x.id === e.target.dataset.id);
     if (q) { q.active = e.target.checked; renderQueryList(); saveQueries(); }
@@ -192,11 +221,6 @@ function renderQueryList() {
   list.querySelectorAll('.query-color-picker').forEach(el => el.addEventListener('change', (e) => {
     const q = priorityQueries.find(x => x.id === e.target.dataset.id);
     if (q) { q.color = e.target.value; saveQueries(); }
-  }));
-
-  list.querySelectorAll('.query-input').forEach(el => el.addEventListener('input', (e) => {
-    const q = priorityQueries.find(x => x.id === e.target.dataset.id);
-    if (q) { q.text = e.target.value; saveQueries(); }
   }));
 
   list.querySelectorAll('.move-up').forEach(el => el.addEventListener('click', (e) => {
