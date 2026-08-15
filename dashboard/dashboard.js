@@ -59,6 +59,38 @@ async function initDashboard() {
       document.getElementById('cb-clear-diagnostics').checked = false;
     });
 
+    // 1. Click proxy -> Opens native color picker dialog
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('color-swatch-proxy')) {
+            const queryId = e.target.id.replace('color-proxy-', '');
+            const colorInput = document.getElementById(`color-input-${queryId}`);
+            if (colorInput) {
+                colorInput.click();
+            }
+        }
+    });
+
+    // 2. Color changed -> Updates proxy background and saves state
+    document.addEventListener('input', (e) => {
+        if (e.target.classList.contains('hidden-color-input')) {
+            const queryId = e.target.dataset.id;
+            const newColor = e.target.value;
+
+            // Update the visual proxy box immediately
+            const proxy = document.getElementById(`color-proxy-${queryId}`);
+            if (proxy) {
+                proxy.style.backgroundColor = newColor;
+            }
+
+            // Update the query model and persist
+            const q = priorityQueries.find(x => x.id === queryId);
+            if (q) {
+                q.color = newColor;
+                saveQueries();
+            }
+        }
+    });
+
   // Sort Event Listeners
   document.getElementById('sort-select')?.addEventListener('change', (e) => {
     currentSortField = e.target.value;
@@ -175,11 +207,17 @@ function renderQueryList() {
     const li = document.createElement('li');
     li.className = `query-item ${q.active ? '' : 'inactive'}`;
 
-    // Replaced <input type="text"> with <textarea rows="1" dir="auto">
     li.innerHTML = `
       <input type="checkbox" title="Toggle active status" class="query-toggle" ${q.active ? 'checked' : ''} data-id="${q.id}">
-      <input type="color" class="query-color-picker" value="${q.color}" data-id="${q.id}">
-      <textarea class="query-input" placeholder="Regex /.../ or keywords..." data-id="${q.id}" rows="1" dir="auto">${escapeHtml(q.text)}</textarea>
+
+      <!-- Hidden Native Color Input (Drives the OS Picker) -->
+      <input type="color" class="hidden-color-input" id="color-input-${q.id}" value="${q.color}" data-id="${q.id}">
+
+      <!-- Visible Clickable Proxy Box -->
+      <div class="color-swatch-proxy" id="color-proxy-${q.id}" style="background-color: ${q.color};" title="Change Query Color"></div>
+
+      <textarea class="query-input" placeholder="Search posts... (e.g. crypto AND btc, author:&quot;John&quot;, /hiring/i)" data-id="${q.id}" rows="1" dir="ltr">${escapeHtml(q.text)}</textarea>
+
       <div class="query-actions">
         <button class="btn-query-action move-up" data-index="${index}" ${index === 0 ? 'disabled' : ''}>▲</button>
         <button class="btn-query-action move-down" data-index="${index}" ${index === priorityQueries.length - 1 ? 'disabled' : ''}>▼</button>
@@ -192,16 +230,12 @@ function renderQueryList() {
   // Attach Textarea Auto-Resize Listeners
   const textAreas = list.querySelectorAll('.query-input');
   textAreas.forEach(el => {
-    // Function to calculate and apply the correct height based on content
     const autoResize = () => {
-      el.style.height = 'auto'; // Reset first to shrink if text was deleted
-      el.style.height = el.scrollHeight + 'px'; // Expand to fit
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
     };
-
-    // Apply exact height immediately upon rendering
     requestAnimationFrame(autoResize);
 
-    // Update height & save to database on keystroke
     el.addEventListener('input', (e) => {
       autoResize();
       const q = priorityQueries.find(x => x.id === e.target.dataset.id);
@@ -212,15 +246,10 @@ function renderQueryList() {
     });
   });
 
-  // Attach Other Listeners (Checkbox, Color, Arrows, Delete)
+  // Attach Other Listeners (Checkbox, Arrows, Delete)
   list.querySelectorAll('.query-toggle').forEach(el => el.addEventListener('change', (e) => {
     const q = priorityQueries.find(x => x.id === e.target.dataset.id);
     if (q) { q.active = e.target.checked; renderQueryList(); saveQueries(); }
-  }));
-
-  list.querySelectorAll('.query-color-picker').forEach(el => el.addEventListener('change', (e) => {
-    const q = priorityQueries.find(x => x.id === e.target.dataset.id);
-    if (q) { q.color = e.target.value; saveQueries(); }
   }));
 
   list.querySelectorAll('.move-up').forEach(el => el.addEventListener('click', (e) => {
